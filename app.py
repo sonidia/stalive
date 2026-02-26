@@ -1,8 +1,9 @@
 import sys
 import json
 import requests
+import os
 
-from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread
+from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint
 from PySide6.QtGui     import QColor, QFont, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -60,6 +61,128 @@ COUNTRY_DATA = {
 
 ALL_NETWORKS = sorted({n for d in COUNTRY_DATA.values() for n in d["networks"]})
 API_BASE     = "http://192.168.1.33:1998/api"
+PROXY_CACHE_FILE = "proxy_cache.json"
+API_BASE_CONFIG_FILE = "api_config.json"
+
+def load_api_base() -> str:
+    """Load saved API base URL from config file."""
+    try:
+        if os.path.exists(API_BASE_CONFIG_FILE):
+            with open(API_BASE_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f).get("api_base", API_BASE)
+    except Exception:
+        pass
+    return API_BASE
+
+def save_api_base(url: str):
+    """Save API base URL to config file."""
+    try:
+        with open(API_BASE_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump({"api_base": url}, f)
+    except Exception as e:
+        print(f"Error saving API base: {e}")
+
+# ─── Country Flags ─────────────────────────────────────────────────────────────
+def draw_country_flag(painter, country_code, rect):
+    """Draw a simple flag icon for the given country code."""
+    # Don't save/restore painter state as it may already be managed by caller
+    # painter.save()
+
+    # Flag dimensions
+    flag_width = 20
+    flag_height = 14
+    flag_rect = QRect(rect.left() + 5, rect.top() + (rect.height() - flag_height) // 2,
+                     flag_width, flag_height)
+
+    if country_code == "US":  # Stars and stripes
+        # Red and white stripes
+        painter.fillRect(flag_rect, QColor("#B22234"))  # Red background
+        for i in range(7):
+            if i % 2 == 0:
+                painter.fillRect(QRect(flag_rect.left(), flag_rect.top() + i * 2, flag_width, 2),
+                               QColor("#FFFFFF"))
+
+        # Blue canton
+        canton_rect = QRect(flag_rect.left(), flag_rect.top(), flag_width * 2 // 3, flag_height * 7 // 13)
+        painter.fillRect(canton_rect, QColor("#3C3B6E"))
+
+    elif country_code == "GB":  # Union Jack
+        painter.fillRect(flag_rect, QColor("#012169"))  # Dark blue background
+        # Simple cross
+        painter.fillRect(QRect(flag_rect.left() + 8, flag_rect.top(), 4, flag_height), QColor("#FFFFFF"))
+        painter.fillRect(QRect(flag_rect.left(), flag_rect.top() + 5, flag_width, 4), QColor("#FFFFFF"))
+        painter.fillRect(QRect(flag_rect.left() + 8, flag_rect.top(), 4, flag_height), QColor("#C8102E"))
+        painter.fillRect(QRect(flag_rect.left(), flag_rect.top() + 5, flag_width, 4), QColor("#C8102E"))
+
+    elif country_code == "DE":  # German flag
+        painter.fillRect(QRect(flag_rect.left(), flag_rect.top(), flag_width, flag_height // 3), QColor("#000000"))
+        painter.fillRect(QRect(flag_rect.left(), flag_rect.top() + flag_height // 3, flag_width, flag_height // 3), QColor("#DD0000"))
+        painter.fillRect(QRect(flag_rect.left(), flag_rect.top() + 2 * flag_height // 3, flag_width, flag_height // 3), QColor("#FFCC00"))
+
+    elif country_code == "FR":  # French flag
+        painter.fillRect(QRect(flag_rect.left(), flag_rect.top(), flag_width // 3, flag_height), QColor("#002654"))
+        painter.fillRect(QRect(flag_rect.left() + flag_width // 3, flag_rect.top(), flag_width // 3, flag_height), QColor("#FFFFFF"))
+        painter.fillRect(QRect(flag_rect.left() + 2 * flag_width // 3, flag_rect.top(), flag_width // 3, flag_height), QColor("#ED2939"))
+
+    elif country_code == "JP":  # Japanese flag
+        painter.fillRect(flag_rect, QColor("#FFFFFF"))
+        painter.setBrush(QColor("#BC002D"))
+        painter.drawEllipse(flag_rect.center(), 5, 5)
+
+    elif country_code == "CA":  # Canadian flag (simplified)
+        painter.fillRect(flag_rect, QColor("#FF0000"))
+        painter.fillRect(QRect(flag_rect.left() + 8, flag_rect.top(), 4, flag_height), QColor("#FFFFFF"))
+
+    elif country_code == "AU":  # Australian flag (simplified)
+        painter.fillRect(flag_rect, QColor("#012169"))
+        # Cross
+        painter.fillRect(QRect(flag_rect.left() + 8, flag_rect.top(), 4, flag_height), QColor("#FFFFFF"))
+        painter.fillRect(QRect(flag_rect.left(), flag_rect.top() + 5, flag_width, 4), QColor("#FFFFFF"))
+
+    elif country_code == "SG":  # Singapore flag (simplified)
+        painter.fillRect(QRect(flag_rect.left(), flag_rect.top(), flag_width, flag_height // 2), QColor("#ED2939"))
+        painter.fillRect(QRect(flag_rect.left(), flag_rect.top() + flag_height // 2, flag_width, flag_height // 2), QColor("#FFFFFF"))
+
+    elif country_code == "IN":  # Indian flag (simplified)
+        painter.fillRect(QRect(flag_rect.left(), flag_rect.top(), flag_width, flag_height // 3), QColor("#FF9933"))
+        painter.fillRect(QRect(flag_rect.left(), flag_rect.top() + flag_height // 3, flag_width, flag_height // 3), QColor("#FFFFFF"))
+        painter.fillRect(QRect(flag_rect.left(), flag_rect.top() + 2 * flag_height // 3, flag_width, flag_height // 3), QColor("#128807"))
+
+    elif country_code == "BR":  # Brazilian flag (simplified)
+        painter.fillRect(flag_rect, QColor("#009739"))
+        # Yellow diamond
+        points = [
+            QPoint(flag_rect.center().x(), flag_rect.top() + 2),
+            QPoint(flag_rect.right() - 2, flag_rect.center().y()),
+            QPoint(flag_rect.center().x(), flag_rect.bottom() - 2),
+            QPoint(flag_rect.left() + 2, flag_rect.center().y())
+        ]
+        painter.setBrush(QColor("#FFDF00"))
+        painter.drawPolygon(points)
+
+    else:  # Default flag pattern
+        painter.fillRect(flag_rect, QColor("#CCCCCC"))
+        painter.setPen(QColor("#666666"))
+        painter.drawText(flag_rect, Qt.AlignmentFlag.AlignCenter, "?")
+
+    # painter.restore()
+def save_proxies_to_file(proxies):
+    """Save proxy list to local JSON file."""
+    try:
+        with open(PROXY_CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(proxies, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error saving proxies: {e}")
+
+def load_proxies_from_file():
+    """Load proxy list from local JSON file."""
+    try:
+        if os.path.exists(PROXY_CACHE_FILE):
+            with open(PROXY_CACHE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Error loading proxies: {e}")
+    return []
 
 # ─── Palette ───────────────────────────────────────────────────────────────────
 C = {
@@ -302,13 +425,14 @@ class FetchWorker(QObject):
     finished = Signal(object)
     error    = Signal(str)
 
-    def __init__(self, params: dict):
+    def __init__(self, params: dict, api_base: str):
         super().__init__()
-        self._params = params
+        self._params   = params
+        self._api_base = api_base
 
     def run(self):
         try:
-            resp = requests.get(API_BASE, params=self._params, timeout=15)
+            resp = requests.get(self._api_base, params=self._params, timeout=15)
             self.finished.emit(resp)
         except requests.exceptions.ConnectionError:
             self.error.emit("Connection refused – check API server.")
@@ -344,8 +468,9 @@ class ProxyCheckWorker(QObject):
 class HighlightDelegate(QStyledItemDelegate):
     """Custom delegate to highlight matching text in dropdown items."""
 
-    def __init__(self, parent=None):
+    def __init__(self, combo_box, parent=None):
         super().__init__(parent)
+        self.combo_box = combo_box
         self.highlight_color = QColor(C['accent'])
         self.match_text = ""
 
@@ -358,6 +483,17 @@ class HighlightDelegate(QStyledItemDelegate):
         if not text:
             return super().paint(painter, option, index)
 
+        # Check if this is the currently selected item
+        is_selected = (index.row() == self.combo_box.currentIndex())
+
+        # Check if this is area code combo box
+        is_area_combo = self.combo_box.objectName() == "area_cb"
+
+        # For area combo, show text with flag icon
+        display_text = text
+        if is_area_combo:
+            display_text = f"  {text}"  # Add space for flag icon
+
         # Check if we need to highlight
         if self.match_text and self.match_text in text.lower():
             # Draw highlighted background for the entire item
@@ -368,16 +504,50 @@ class HighlightDelegate(QStyledItemDelegate):
             painter.setBrush(self.highlight_color)
             painter.drawRoundedRect(option.rect.adjusted(2, 2, -2, -2), 4, 4)
 
+            # Draw flag icon if area combo
+            if is_area_combo and text:
+                draw_country_flag(painter, text, option.rect)
+
             # Draw text in white
             painter.setPen(QColor("#ffffff"))
-            painter.drawText(option.rect.adjusted(10, 0, -10, 0),
+            text_rect = option.rect.adjusted(35, 0, -30, 0)  # Leave space for flag and check mark
+            painter.drawText(text_rect,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                           text)
+                           display_text)
+
+            # Draw check mark if selected
+            if is_selected:
+                painter.setPen(QColor("#ffffff"))
+                painter.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+                painter.drawText(option.rect.adjusted(0, 0, -10, 0),
+                               Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                               "✓")
         else:
-            # No highlighting needed, use default painting
+            # No highlighting needed, use default painting but add check mark if selected
+            # Draw default background
             super().paint(painter, option, index)
 
+            # Draw flag icon if area combo
+            if is_area_combo and text:
+                draw_country_flag(painter, text, option.rect)
 
+            # Override text with spacing if area combo
+            if is_area_combo:
+                # Clear the original text area and redraw
+                painter.setPen(option.palette.color(option.palette.ColorRole.Text))
+                text_rect = option.rect.adjusted(35, 0, -30, 0)  # Leave space for flag and check mark
+                painter.fillRect(text_rect, option.backgroundBrush)  # Clear background
+                painter.drawText(text_rect,
+                               Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                               display_text)
+
+            if is_selected:
+                # Draw check mark on default background
+                painter.setPen(QColor(C['accent']))
+                painter.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+                painter.drawText(option.rect.adjusted(0, 0, -10, 0),
+                               Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                               "✓")
 class AutoComboBox(QComboBox):
     """Editable QComboBox with live contains-filtering via QCompleter."""
 
@@ -422,6 +592,7 @@ class AutoComboBox(QComboBox):
         # Create and set custom delegate for highlighting
         self._highlight_delegate = HighlightDelegate(self)
         self._completer.popup().setItemDelegate(self._highlight_delegate)
+        self.view().setItemDelegate(self._highlight_delegate)  # Also set for combo box dropdown
         self._completer.popup().setStyleSheet(self.POPUP_STYLE)
 
         # Connect text changes to update highlighting
@@ -464,6 +635,12 @@ class AutoComboBox(QComboBox):
     def current_value(self) -> str:
         return self.currentText().strip()
 
+    def focusInEvent(self, event):
+        """Show popup when focusing on combo box."""
+        super().focusInEvent(event)
+        if not self.view().isVisible():
+            self.showPopup()
+
 
 # ─── Main window ───────────────────────────────────────────────────────────────
 class ProxyApp(QMainWindow):
@@ -491,6 +668,7 @@ class ProxyApp(QMainWindow):
         self._on_country_change("US")  # Manually trigger to populate state dropdown
         self._state_cb.setCurrentText("FL")
         self._network_cb.setCurrentText("ATT")
+        self._port_edit.setText("2000")
 
     # ── Build UI ────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -522,7 +700,26 @@ class ProxyApp(QMainWindow):
         sub = QLabel("Search & retrieve proxies by country, state and network carrier")
         sub.setStyleSheet(f"color: {C['subtext']}; font-size: 9pt; background: transparent;")
         main.addWidget(sub)
-        main.addSpacing(14)
+        main.addSpacing(10)
+
+        # ── API Base URL bar ─────────────────────────────────────────────────
+        api_bar = QHBoxLayout(); api_bar.setSpacing(8)
+        api_lbl = QLabel("🔗  API URL:")
+        api_lbl.setStyleSheet(f"color: {C['label']}; font-size: 9pt; font-weight: 700; background: transparent;")
+        api_lbl.setFixedWidth(72)
+        self._api_edit = QLineEdit(load_api_base())
+        self._api_edit.setPlaceholderText("http://host:port/api")
+        self._api_edit.setFixedHeight(34)
+        self._api_save_btn = QPushButton("Save")
+        self._api_save_btn.setObjectName("clearBtn")
+        self._api_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._api_save_btn.setFixedSize(70, 36)
+        self._api_save_btn.clicked.connect(self._save_api_base)
+        api_bar.addWidget(api_lbl)
+        api_bar.addWidget(self._api_edit, 1)
+        api_bar.addWidget(self._api_save_btn)
+        main.addLayout(api_bar)
+        main.addSpacing(10)
 
         div0 = QFrame(); div0.setObjectName("divider"); div0.setFixedHeight(1)
         main.addWidget(div0)
@@ -545,6 +742,7 @@ class ProxyApp(QMainWindow):
         self._fld_lbl(g1, "NETWORK / ISP",    2, 1)
 
         self._area_cb = AutoComboBox()
+        self._area_cb.setObjectName("area_cb")
         self._area_cb.set_items(list(COUNTRY_DATA.keys()))
         self._area_cb.setPlaceholderText("e.g. US")
         self._area_cb.currentTextChanged.connect(self._on_country_change)
@@ -642,6 +840,9 @@ class ProxyApp(QMainWindow):
         self._scroll.setWidget(self._result_container)
         main.addWidget(self._scroll, 1)
 
+        # Load cached proxies on startup
+        self._load_cached_proxies()
+
     # ── Helper label factories ───────────────────────────────────────────────
     def _sec_lbl(self, grid, text, col, row, span=1):
         lbl = QLabel(text); lbl.setObjectName("section")
@@ -658,6 +859,15 @@ class ProxyApp(QMainWindow):
         networks = data.get("networks", ALL_NETWORKS)
         self._state_cb.set_items(states)
         self._network_cb.set_items(networks)
+
+    # ── API Base ─────────────────────────────────────────────────────────────
+    def _save_api_base(self):
+        url = self._api_edit.text().strip()
+        if not url:
+            QMessageBox.warning(self, "Invalid URL", "API URL cannot be empty.")
+            return
+        save_api_base(url)
+        self._set_status(f"✓  API URL saved", C['success'])
 
     # ── Fetch ────────────────────────────────────────────────────────────────
     def _fetch(self):
@@ -683,10 +893,9 @@ class ProxyApp(QMainWindow):
 
         self._set_status("⏳  Fetching…", C['subtext'])
         self._fetch_btn.setEnabled(False)
-        self._result.clear()
 
         self._thread = QThread()
-        self._worker = FetchWorker(params)
+        self._worker = FetchWorker(params, self._api_edit.text().strip() or load_api_base())
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.finished.connect(self._handle_response)
@@ -721,22 +930,42 @@ class ProxyApp(QMainWindow):
             if item.widget():
                 item.widget().deleteLater()
 
-    def _render_json(self, data, url: str):
+        # Force layout update
+        self._result_container.update()
+
+    def _render_json(self, data, url: str, save_proxies=True):
         self._clear_rows()
         # URL info row
         self._add_info_row(f"URL: {url}")
 
+        proxies_to_save = []
         if isinstance(data, list):
             self._add_info_row(f"Found {len(data)} result(s)", color=C['success'])
             for item in data:
                 if isinstance(item, dict):
                     self._add_proxy_row(item)
+                    proxies_to_save.append(item)
                 else:
                     self._add_info_row(str(item))
         elif isinstance(data, dict):
             self._add_proxy_row(data)
+            proxies_to_save.append(data)
         else:
             self._add_info_row(str(data))
+
+        # Save proxies to file if requested
+        if save_proxies and proxies_to_save:
+            save_proxies_to_file(proxies_to_save)
+
+    def _load_cached_proxies(self):
+        """Load and display cached proxies on startup."""
+        cached_proxies = load_proxies_from_file()
+        if cached_proxies:
+            self._clear_rows()
+            self._add_info_row("Loaded cached proxies", color=C['subtext'])
+            self._add_info_row(f"Found {len(cached_proxies)} cached result(s)", color=C['success'])
+            for proxy in cached_proxies:
+                self._add_proxy_row(proxy)
 
     def _proxy_str(self, d: dict) -> str:
         """Build a display string from a proxy dict."""
@@ -841,7 +1070,13 @@ class ProxyApp(QMainWindow):
         self._clear_rows()
         self._status_lbl.setText("")
 
-
+        # Clear input fields
+        self._area_cb.setCurrentText("")  # Clear country selection
+        self._state_cb.clear()  # Clear state dropdown
+        self._network_cb.setCurrentText("")  # Clear network selection
+        self._port_edit.clear()
+        self._number_edit.setText("1")  # Reset to default
+        self._start_edit.setText("40000")  # Reset to default
 # ═══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -258,7 +258,7 @@ if getattr(sys, 'frozen', False):
 else:
     _DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 
-APP_DATA_FILE = os.path.join(_DATA_DIR, "app_data.json")
+APP_DATA_FILE = os.path.join(_DATA_DIR, "data.json")
 
 def _load_app_data() -> dict:
     """Load the unified data file. Returns dict with keys: api_base, proxies."""
@@ -552,6 +552,11 @@ QComboBox QAbstractItemView::item:hover {{
     background: {C['accent']};
     color: #fff;
 }}
+QToolTip {{
+    background: {C['panel']};
+    color: {C['text']};
+    border: 1px solid {C['border']};
+}}
 QPushButton#fetchBtn {{
     background: {C['accent']};
     color: #fff;
@@ -597,6 +602,30 @@ QPushButton#autoCheckBtn:disabled {{
     border-color: {C['border']};
     opacity: 0.5;
 }}
+QPushButton#bulkCheckBtn {{
+    background: {C['card']};
+    color: {C['accent2']};
+    border: 1.5px solid {C['border']};
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 10pt;
+    font-weight: 700;
+}}
+QPushButton#bulkCheckBtn:hover  {{ background: {C['accent']}; color: #fff; border-color: {C['accent']}; }}
+QPushButton#bulkCheckBtn:pressed {{ background: #5a52e0; color: #fff; }}
+QPushButton#bulkCheckBtn:disabled {{ background: {C['card']}; color: {C['subtext']}; border-color: {C['border']}; }}
+QPushButton#bulkRefreshBtn {{
+    background: {C['card']};
+    color: {C['label']};
+    border: 1.5px solid {C['border']};
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 10pt;
+    font-weight: 700;
+}}
+QPushButton#bulkRefreshBtn:hover  {{ background: {C['border']}; color: {C['text']}; }}
+QPushButton#bulkRefreshBtn:pressed {{ background: #252840; }}
+QPushButton#bulkRefreshBtn:disabled {{ background: {C['card']}; color: {C['subtext']}; border-color: {C['border']}; }}
 /* ── Proxy card ── */
 QWidget#proxyCard {{
     background: {C['card']};
@@ -808,8 +837,9 @@ class RefreshWorker(QObject):
 class ProxyCard(QWidget):
     """A rich card widget representing one cached proxy entry."""
 
-    deleted   = Signal(object)   # emits self when user deletes
-    refreshed = Signal(object, dict)  # emits (self, new_proxy_dict) after refresh
+    deleted         = Signal(object)        # emits self when user deletes
+    refreshed       = Signal(object, dict)   # emits (self, new_proxy_dict) after refresh
+    auto_check_done = Signal(object)         # emits self when auto-check cycle finished (alive or refresh done)
 
     def __init__(self, proxy_dict: dict, api_base_fn, parent=None):
         super().__init__(parent)
@@ -820,7 +850,8 @@ class ProxyCard(QWidget):
         self._refresh_worker = None
         self._check_thread   = None
         self._check_worker   = None
-        self._auto_check_triggered = False
+        self._auto_check_triggered  = False
+        self._auto_refresh_pending  = False
         self._build()
 
     # ── accessors ──
@@ -867,11 +898,11 @@ class ProxyCard(QWidget):
         row1.addLayout(ip_copy_layout)
         row1.addStretch(1)
 
-        self._status_lbl = QLabel("● Unknown")
+        self._status_lbl = QLabel("● Status: unknown")
         self._status_lbl.setObjectName("statusUnknown")
         row1.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self._refresh_btn = QPushButton("↻  Refresh")
+        self._refresh_btn = QPushButton("↻  Renew")
         self._refresh_btn.setObjectName("cardRefreshBtn")
         self._refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._refresh_btn.setFixedHeight(28)
@@ -973,7 +1004,10 @@ class ProxyCard(QWidget):
         if alive:
             self._status_lbl.setObjectName("statusAlive")
             self._status_lbl.setText("● Alive")
+            was_auto = self._auto_check_triggered
             self._auto_check_triggered = False  # Reset flag
+            if was_auto:
+                self.auto_check_done.emit(self)  # Notify: cycle done, proxy is alive
         else:
             self._status_lbl.setObjectName("statusDead")
             self._status_lbl.setText("✕ Dead")
@@ -981,7 +1015,9 @@ class ProxyCard(QWidget):
             if self._auto_check_triggered:
                 self._auto_check_triggered = False  # Reset flag
                 # Small delay before auto-refresh to avoid overwhelming the API
+                self._auto_refresh_pending = True
                 QTimer.singleShot(1000, self._do_refresh)
+                # auto_check_done will be emitted after refresh finishes
         # Force QSS re-evaluation after objectName change
         self._status_lbl.style().unpolish(self._status_lbl)
         self._status_lbl.style().polish(self._status_lbl)
@@ -1020,11 +1056,15 @@ class ProxyCard(QWidget):
 
     def _on_refresh_done(self, resp):
         self._refresh_btn.setEnabled(True)
+        was_auto = self._auto_refresh_pending
+        self._auto_refresh_pending = False
         if resp.status_code != 200:
             self._status_lbl.setObjectName("statusDead")
             self._status_lbl.setText(f"✕ HTTP {resp.status_code}")
             self._status_lbl.style().unpolish(self._status_lbl)
             self._status_lbl.style().polish(self._status_lbl)
+            if was_auto:
+                self.auto_check_done.emit(self)
             return
 
         content_type = resp.headers.get('content-type', '').lower()
@@ -1052,6 +1092,8 @@ class ProxyCard(QWidget):
                     self._status_lbl.setText("✕ Bad format")
                     self._status_lbl.style().unpolish(self._status_lbl)
                     self._status_lbl.style().polish(self._status_lbl)
+                    if was_auto:
+                        self.auto_check_done.emit(self)
                     return
         except Exception as e:
             print(f"[DEBUG] Refresh parse error: {e}")
@@ -1060,6 +1102,8 @@ class ProxyCard(QWidget):
             self._status_lbl.setText("✕ Bad JSON")
             self._status_lbl.style().unpolish(self._status_lbl)
             self._status_lbl.style().polish(self._status_lbl)
+            if was_auto:
+                self.auto_check_done.emit(self)
             return
 
         # Extract first proxy from response
@@ -1074,6 +1118,8 @@ class ProxyCard(QWidget):
             self._status_lbl.setText("✕ No result")
             self._status_lbl.style().unpolish(self._status_lbl)
             self._status_lbl.style().polish(self._status_lbl)
+            if was_auto:
+                self.auto_check_done.emit(self)
             return
 
         # Preserve metadata from old entry
@@ -1086,14 +1132,21 @@ class ProxyCard(QWidget):
         delete_proxy_from_file(old_ip, old_port)
         save_proxies_to_file([new_proxy])
 
+        # Notify auto-check cycle before emitting refreshed (card will be destroyed)
+        if was_auto:
+            self.auto_check_done.emit(self)
         self.refreshed.emit(self, new_proxy)
 
     def _on_refresh_error(self, msg: str):
         self._refresh_btn.setEnabled(True)
+        was_auto = self._auto_refresh_pending
+        self._auto_refresh_pending = False
         self._status_lbl.setObjectName("statusDead")
         self._status_lbl.setText("✕ Error")
         self._status_lbl.style().unpolish(self._status_lbl)
         self._status_lbl.style().polish(self._status_lbl)
+        if was_auto:
+            self.auto_check_done.emit(self)
 
 
 # ─── Autocomplete ComboBox ──────────────────────────────────────────────────────
@@ -1280,18 +1333,21 @@ class ProxyApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Proxy Fetcher")
-        self.setFixedSize(860, 720)
+        self.setWindowTitle("Proxer - Auto retrieve proxies network carrier from Cliproxy")
+        self.setFixedSize(760, 720)
         self._status_sig.connect(self._apply_status)
         self._auto_check_enabled = False
         self._auto_check_timer = QTimer()
+        self._auto_check_timer.setSingleShot(True)   # fire once; restarted manually after cycle
         self._auto_check_timer.timeout.connect(self._auto_check_all_proxies)
         self._countdown_timer = QTimer()
         self._countdown_timer.timeout.connect(self._update_countdown)
         self._countdown_remaining = 30
+        self._auto_check_pending = 0   # number of cards still being processed in current cycle
         self._build_ui()
         self._center()
         self._set_defaults()
+        self._toggle_auto_check()  # Enable auto-check by default
 
     def _center(self):
         screen = QApplication.primaryScreen().availableGeometry()
@@ -1308,6 +1364,8 @@ class ProxyApp(QMainWindow):
         self._on_state_change("Florida")  # Manually trigger to populate city dropdown
         self._network_cb.setCurrentText("ATT")
         self._port_edit.setText("2000")
+        # Prevent auto-focus on API URL input
+        self._fetch_btn.setFocus()
 
     # ── Build UI ────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -1315,35 +1373,12 @@ class ProxyApp(QMainWindow):
         root.setObjectName("central")
         self.setCentralWidget(root)
         main = QVBoxLayout(root)
-        main.setContentsMargins(28, 22, 28, 22)
+        main.setContentsMargins(16, 22, 14, 20)
         main.setSpacing(0)
-
-        # Header
-        hdr = QHBoxLayout()
-        hdr.setSpacing(8)
-        icon_lbl = QLabel("🌐")
-        icon_lbl.setFont(QFont("Segoe UI Emoji", 20))
-        icon_lbl.setStyleSheet(f"color: {C['accent']}; background: transparent;")
-        title_lbl = QLabel("Proxy Fetcher")
-        title_lbl.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
-        badge = QLabel("v1.0")
-        badge.setObjectName("badge")
-        badge.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        hdr.addWidget(icon_lbl)
-        hdr.addWidget(title_lbl)
-        hdr.addWidget(badge)
-        hdr.addStretch()
-        main.addLayout(hdr)
-        main.addSpacing(4)
-
-        sub = QLabel("Search & retrieve proxies by country, state and network carrier")
-        sub.setStyleSheet(f"color: {C['subtext']}; font-size: 9pt; background: transparent;")
-        main.addWidget(sub)
-        main.addSpacing(10)
 
         # ── API Base URL bar ─────────────────────────────────────────────────
         api_bar = QHBoxLayout(); api_bar.setSpacing(8)
-        api_lbl = QLabel("🔗  API URL:")
+        api_lbl = QLabel("🔗 API URL:")
         api_lbl.setStyleSheet(f"color: {C['label']}; font-size: 9pt; font-weight: 700; background: transparent;")
         api_lbl.setFixedWidth(72)
         self._api_edit = QLineEdit(load_api_base())
@@ -1362,10 +1397,6 @@ class ProxyApp(QMainWindow):
         main.addLayout(api_bar)
         main.addSpacing(10)
 
-        div0 = QFrame(); div0.setObjectName("divider"); div0.setFixedHeight(1)
-        main.addWidget(div0)
-        main.addSpacing(14)
-
         # ── Form card (full width) ──────────────────────────────────────────────
         card = QWidget(); card.setObjectName("card")
         card_v = QVBoxLayout(card)
@@ -1377,7 +1408,6 @@ class ProxyApp(QMainWindow):
         g1.setHorizontalSpacing(12); g1.setVerticalSpacing(6)
         for i in range(3): g1.setColumnStretch(i, 1)
 
-        self._sec_lbl(g1, "🗺️  Settings", 0, 0, 3)
         self._fld_lbl(g1, "AREA CODE",        0, 1)
         self._fld_lbl(g1, "STATE / PROVINCE", 1, 1)
         self._fld_lbl(g1, "NETWORK / ISP",    2, 1)
@@ -1400,10 +1430,6 @@ class ProxyApp(QMainWindow):
         g1.addWidget(self._network_cb, 2, 2)
 
         card_v.addLayout(g1)
-        card_v.addSpacing(14)
-
-        div_inner = QFrame(); div_inner.setObjectName("divider"); div_inner.setFixedHeight(1)
-        card_v.addWidget(div_inner)
         card_v.addSpacing(14)
 
         # Grid 2 — Query Options (3 cols)
@@ -1435,35 +1461,68 @@ class ProxyApp(QMainWindow):
         # ── Action bar (full width, 2 buttons) ───────────────────────────────
         act = QHBoxLayout(); act.setSpacing(10)
 
-        self._fetch_btn = QPushButton("  🔍  Fetch Proxy")
+        self._fetch_btn = QPushButton("🔍 Retrieve")
         self._fetch_btn.setObjectName("fetchBtn")
         self._fetch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._fetch_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._fetch_btn.setFixedHeight(36)
         self._fetch_btn.clicked.connect(self._fetch)
 
-        self._clear_cache_btn = QPushButton("  🗑  Clear Cache")
+        self._clear_cache_btn = QPushButton("🗑 Reset")
         self._clear_cache_btn.setObjectName("clearBtn")
         self._clear_cache_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._clear_cache_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._clear_cache_btn.setFixedHeight(36)
         self._clear_cache_btn.clicked.connect(self._clear_cache)
 
-        self._auto_check_btn = QPushButton("  ⏰  Auto Check: OFF")
+        self._auto_check_btn = QPushButton()
         self._auto_check_btn.setObjectName("autoCheckBtn")
         self._auto_check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._auto_check_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._auto_check_btn.setFixedHeight(36)
+        auto_check_layout = QHBoxLayout(self._auto_check_btn)
+        auto_check_layout.setContentsMargins(10, 10, 10, 10)
+        auto_check_layout.setSpacing(0)
+        self._auto_check_label = QLabel("  ⏰ Auto check:")
+        self._auto_check_label.setStyleSheet(f"color: {C['label']}; background: transparent;")
+        self._auto_check_status = QLabel("OFF")
+        self._auto_check_status.setMargin(2)
+        self._auto_check_status.setStyleSheet(f"color: {C['subtext']}; background: transparent;")
+        auto_check_layout.addWidget(self._auto_check_label)
+        auto_check_layout.addWidget(self._auto_check_status)
+        auto_check_layout.addStretch()
         self._auto_check_btn.clicked.connect(self._toggle_auto_check)
+
+        self._bulk_check_btn = QPushButton("⚡ Bulk Check")
+        self._bulk_check_btn.setObjectName("bulkCheckBtn")
+        self._bulk_check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._bulk_check_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._bulk_check_btn.setFixedHeight(36)
+        self._bulk_check_btn.setEnabled(False)
+        self._bulk_check_btn.clicked.connect(self._bulk_check)
+
+        self._bulk_refresh_btn = QPushButton("↻ Bulk Refresh")
+        self._bulk_refresh_btn.setObjectName("bulkRefreshBtn")
+        self._bulk_refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._bulk_refresh_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._bulk_refresh_btn.setFixedHeight(36)
+        self._bulk_refresh_btn.setEnabled(False)
+        self._bulk_refresh_btn.clicked.connect(self._bulk_refresh)
 
         act.addWidget(self._fetch_btn, 2)
         act.addWidget(self._clear_cache_btn, 1)
-        act.addWidget(self._auto_check_btn, 1)
+        act.addWidget(self._bulk_check_btn, 1)
+        act.addWidget(self._bulk_refresh_btn, 1)
+        act.addWidget(self._auto_check_btn, 2)
         main.addLayout(act)
         main.addSpacing(6)
 
+        div0 = QFrame(); div0.setObjectName("divider"); div0.setFixedHeight(1)
+        main.addWidget(div0)
+        main.addSpacing(14)
+
         # ── Result section ────────────────────────────────────────────────────
         res_bar = QHBoxLayout()
-        res_hdr = QLabel("PROXIES")
-        res_hdr.setStyleSheet(
-            f"color: {C['subtext']}; font-size: 8pt; font-weight: 700; background: transparent;")
         self._res_count_lbl = QLabel("0 proxies")
         self._res_count_lbl.setStyleSheet(
             f"color: {C['accent2']}; font-size: 8pt; font-weight: 700; background: transparent;")
@@ -1472,12 +1531,9 @@ class ProxyApp(QMainWindow):
         self._status_lbl.setStyleSheet(
             f"color: {C['subtext']}; font-size: 8pt; background: transparent;")
 
-        res_bar.addWidget(res_hdr)
-        res_bar.addSpacing(8)
         res_bar.addWidget(self._res_count_lbl)
-        res_bar.addSpacing(16)
-        res_bar.addWidget(self._status_lbl)
         res_bar.addStretch()
+        res_bar.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignRight)
         main.addLayout(res_bar)
         main.addSpacing(4)
 
@@ -1702,6 +1758,7 @@ class ProxyApp(QMainWindow):
         card = ProxyCard(proxy_dict, lambda: normalize_api_base_for_requests(self._api_edit.text().strip() or load_api_base()))
         card.deleted.connect(self._on_card_deleted)
         card.refreshed.connect(self._on_card_refreshed)
+        card.auto_check_done.connect(self._on_auto_check_card_done)
         card.update_button_visibility(self._auto_check_enabled)  # Set initial visibility
         self._result_layout.insertWidget(self._result_layout.count() - 1, card)
         count = self._result_layout.count() - 1  # exclude stretch
@@ -1724,6 +1781,7 @@ class ProxyApp(QMainWindow):
         new_card = ProxyCard(new_proxy, lambda: normalize_api_base_for_requests(self._api_edit.text().strip() or load_api_base()))
         new_card.deleted.connect(self._on_card_deleted)
         new_card.refreshed.connect(self._on_card_refreshed)
+        new_card.auto_check_done.connect(self._on_auto_check_card_done)
         new_card.update_button_visibility(self._auto_check_enabled)  # Set visibility for new card
         self._result_layout.insertWidget(idx, new_card)
 
@@ -1748,16 +1806,20 @@ class ProxyApp(QMainWindow):
         """Toggle automatic proxy checking every 30 seconds."""
         self._auto_check_enabled = not self._auto_check_enabled
         if self._auto_check_enabled:
-            self._auto_check_timer.start(30000)  # 30 seconds
+            self._auto_check_pending = 0
+            self._auto_check_timer.start(30000)  # 30 seconds (singleShot)
             self._countdown_remaining = 30
             self._countdown_timer.start(1000)  # Update every second
-            self._auto_check_btn.setText("  ⏰  Auto Check: ON")
+            self._auto_check_status.setText("ON")
+            self._auto_check_status.setStyleSheet(f"color: {C['success']}; background: transparent;")
             self._auto_check_btn.setProperty("checked", True)
             self._update_countdown_display()
         else:
+            self._auto_check_pending = 0
             self._auto_check_timer.stop()
             self._countdown_timer.stop()
-            self._auto_check_btn.setText("  ⏰  Auto Check: OFF")
+            self._auto_check_status.setText("OFF")
+            self._auto_check_status.setStyleSheet(f"color: {C['subtext']}; background: transparent;")
             self._auto_check_btn.setProperty("checked", False)
             self._set_status("", C['subtext'])  # Clear countdown display
         # Force style update
@@ -1770,8 +1832,8 @@ class ProxyApp(QMainWindow):
     def _update_countdown(self):
         """Update countdown timer display."""
         self._countdown_remaining -= 1
-        if self._countdown_remaining <= 0:
-            self._countdown_remaining = 30
+        if self._countdown_remaining < 0:
+            self._countdown_remaining = 0
         self._update_countdown_display()
 
     def _update_countdown_display(self):
@@ -1799,12 +1861,15 @@ class ProxyApp(QMainWindow):
             count = self._result_layout.count() - 1  # exclude stretch
         has_proxies = count > 0
         self._auto_check_btn.setEnabled(has_proxies)
+        self._bulk_check_btn.setEnabled(has_proxies)
+        self._bulk_refresh_btn.setEnabled(has_proxies)
         if not has_proxies and self._auto_check_enabled:
             # Turn off auto check if list becomes empty
             self._auto_check_enabled = False
             self._auto_check_timer.stop()
             self._countdown_timer.stop()
-            self._auto_check_btn.setText("  ⏰  Auto Check: OFF")
+            self._auto_check_status.setText("OFF")
+            self._auto_check_status.setStyleSheet(f"color: {C['subtext']}; background: transparent;")
             self._auto_check_btn.setProperty("checked", False)
             self._auto_check_btn.style().unpolish(self._auto_check_btn)
             self._auto_check_btn.style().polish(self._auto_check_btn)
@@ -1812,23 +1877,82 @@ class ProxyApp(QMainWindow):
 
     def _auto_check_all_proxies(self):
         """Automatically check all proxy cards and refresh dead ones."""
-        # Reset countdown
-        self._countdown_remaining = 30
+        # Stop countdown while we are processing (restart after all done)
+        self._countdown_timer.stop()
+        self._status_lbl.setText("⚡ Checking…")
+        self._status_lbl.setStyleSheet(f"color: {C['accent2']}; font-size: 8pt; background: transparent;")
 
         # Iterate through all widgets in the result layout
         count = self._result_layout.count()
         if count <= 1:  # Only stretch item or empty
+            self._restart_auto_check_timer()
             return
 
+        cards = []
         for i in range(count - 1):  # -1 to skip the stretch
             item = self._result_layout.itemAt(i)
             if item and item.widget():
                 widget = item.widget()
-                # Check if it's a ProxyCard by checking the object name
                 if widget.objectName() == "proxyCard" and hasattr(widget, '_auto_check_triggered') and hasattr(widget, '_do_check'):
-                    # Trigger check for this card, marking it as auto-triggered
-                    widget._auto_check_triggered = True
+                    cards.append(widget)
+
+        if not cards:
+            self._restart_auto_check_timer()
+            return
+
+        self._auto_check_pending = len(cards)
+        for widget in cards:
+            widget._auto_check_triggered = True
+            widget._do_check()
+
+    def _on_auto_check_card_done(self, card):
+        """Called when a single card finishes its auto-check cycle (alive or refresh done)."""
+        self._auto_check_pending = max(0, self._auto_check_pending - 1)
+        if self._auto_check_pending == 0:
+            # All cards finished → restart the timer for the next cycle
+            self._restart_auto_check_timer()
+
+    def _restart_auto_check_timer(self):
+        """Restart countdown and schedule the next auto-check cycle."""
+        if not self._auto_check_enabled:
+            return
+        self._countdown_remaining = 30
+        self._countdown_timer.start(1000)
+        self._auto_check_timer.start(30000)  # singleShot fires after 30 s
+        self._update_countdown_display()
+
+    def _bulk_check(self):
+        """Check all proxy cards at once."""
+        count = self._result_layout.count()
+        if count <= 1:
+            return
+        checked = 0
+        for i in range(count - 1):
+            item = self._result_layout.itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                if widget.objectName() == "proxyCard" and hasattr(widget, '_do_check'):
+                    widget._auto_check_triggered = False
                     widget._do_check()
+                    checked += 1
+        if checked:
+            self._set_status(f"⚡ Checking {checked} proxies…", C['accent2'])
+
+    def _bulk_refresh(self):
+        """Refresh all proxy cards at once."""
+        count = self._result_layout.count()
+        if count <= 1:
+            return
+        refreshed = 0
+        for i in range(count - 1):
+            item = self._result_layout.itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                if widget.objectName() == "proxyCard" and hasattr(widget, '_do_refresh'):
+                    widget._do_refresh()
+                    refreshed += 1
+        if refreshed:
+            self._set_status(f"↻ Refreshing {refreshed} proxies…", C['accent2'])
 
     def _clear_cache(self):
         """Wipe all saved proxies and clear the result view."""

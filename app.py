@@ -597,16 +597,16 @@ QPushButton#clearBtn:hover  {{ background: {C['border']}; color: {C['text']}; }}
 QPushButton#clearBtn:pressed {{ background: #252840; }}
 QPushButton#cliproxyBtn {{
     background: {C['card']};
-    color: {C['label']};
-    border: 1px solid #e05252;
+    color: #e05252;
+    border: 2px solid #e05252;
     border-radius: 8px;
     padding: 4px 10px;
     font-size: 9pt;
     font-weight: 700;
 }}
 QPushButton#cliproxyBtn[running="true"] {{
-    border: 1px solid #4caf50;
-    color: {C['text']};
+    border: 2px solid #4caf50;
+    color: #4caf50;
 }}
 QPushButton#cliproxyBtn:hover {{ background: {C['border']}; }}
 QPushButton#autoCheckBtn {{
@@ -1421,12 +1421,11 @@ class ProxyApp(QMainWindow):
         self._api_edit.returnPressed.connect(self._save_api_base)
         self._api_edit.editingFinished.connect(self._save_api_base)
 
-        self._cliproxy_btn = QPushButton("Cliproxy")
+        self._cliproxy_btn = QPushButton("Open Cliproxy")
         self._cliproxy_btn.setObjectName("cliproxyBtn")
         self._cliproxy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._cliproxy_btn.setFixedSize(80, 36)
-        self._cliproxy_btn.setToolTip("Click to check Cliproxy status")
-        self._cliproxy_btn.clicked.connect(self._check_cliproxy)
+        self._cliproxy_btn.setFixedSize(120, 36)
+        self._cliproxy_btn.clicked.connect(self._cliproxy_btn_clicked)
 
         api_bar.addWidget(api_lbl)
         api_bar.addWidget(self._api_edit, 1)
@@ -1650,26 +1649,42 @@ class ProxyApp(QMainWindow):
             return False
 
     def _update_cliproxy_btn(self, running: bool):
-        """Update button border color based on Cliproxy running state."""
+        """Update button label + border color based on Cliproxy running state."""
+        if running:
+            self._cliproxy_btn.setText("Cliproxy: On")
+            self._cliproxy_btn.setToolTip("Cliproxy is running ✔")
+        else:
+            self._cliproxy_btn.setText("Open Cliproxy")
+            self._cliproxy_btn.setToolTip("Cliproxy is not running — click to open")
         self._cliproxy_btn.setProperty("running", "true" if running else "false")
-        self._cliproxy_btn.setToolTip(
-            "Cliproxy is running ✔" if running else "Cliproxy is NOT running ✖"
-        )
         self._cliproxy_btn.style().unpolish(self._cliproxy_btn)
         self._cliproxy_btn.style().polish(self._cliproxy_btn)
 
     def _check_cliproxy_silent(self):
-        """Auto-check called by timer — no status bar update."""
+        """Auto-check called by timer — updates button only, no status bar."""
         self._update_cliproxy_btn(self._is_cliproxy_running())
 
-    def _check_cliproxy(self):
-        """Manual check when user clicks the button."""
-        running = self._is_cliproxy_running()
-        self._update_cliproxy_btn(running)
-        if running:
-            self._set_status("✔  Cliproxy is running", C['success'])
+    def _open_cliproxy(self):
+        """Launch Cliproxy.exe via cmd in background."""
+        import subprocess
+        try:
+            subprocess.Popen(
+                ["cmd", "/c", "start", "", "Cliproxy.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+                shell=False,
+            )
+            self._set_status("⏳  Opening Cliproxy...", C['label'])
+        except Exception as e:
+            self._set_status(f"✖  Cannot open Cliproxy: {e}", "#e05252")
+
+    def _cliproxy_btn_clicked(self):
+        """Called when user clicks the Cliproxy button."""
+        if self._is_cliproxy_running():
+            # Already running — just update status bar info
+            self._set_status("✔  Cliproxy is already running", C['success'])
         else:
-            self._set_status("✖  Cliproxy is NOT running", "#e05252")
+            # Not running — try to open it
+            self._open_cliproxy()
 
     def _save_api_base_manual(self):
         url = self._api_edit.text().strip()

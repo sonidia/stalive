@@ -9,254 +9,18 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QLineEdit, QComboBox, QPushButton,
     QTextEdit, QFrame, QSizePolicy, QCompleter, QMessageBox,
-    QScrollArea, QStyledItemDelegate, QStyleOptionViewItem, QStyle, QGraphicsBlurEffect
+    QScrollArea, QStyledItemDelegate, QStyleOptionViewItem, QStyle, QGraphicsBlurEffect,
+    QSlider
 )
 
-# ─── Data ──────────────────────────────────────────────────────────────────────
-COUNTRY_DATA = {
-    "US": {
-        "states":   [
-            "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado",
-            "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho",
-            "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana",
-            "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
-            "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada",
-            "New Hampshire", "New Jersey", "New Mexico", "New York",
-            "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon",
-            "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota",
-            "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington",
-            "West Virginia", "Wisconsin", "Wyoming",
-        ],
-        "networks": ["ATT", "Verizon", "T-Mobile", "Sprint", "Comcast", "Charter", "CenturyLink", "Cox"],
-        "cities": {
-            "Alabama":        ["Birmingham", "Montgomery", "Huntsville", "Mobile", "Tuscaloosa"],
-            "Alaska":         ["Anchorage", "Fairbanks", "Juneau", "Sitka", "Ketchikan"],
-            "Arizona":        ["Phoenix", "Tucson", "Mesa", "Chandler", "Scottsdale", "Glendale", "Tempe"],
-            "Arkansas":       ["Little Rock", "Fort Smith", "Fayetteville", "Springdale", "Jonesboro"],
-            "California":     ["Los Angeles", "San Diego", "San Jose", "San Francisco", "Fresno", "Sacramento", "Long Beach", "Oakland"],
-            "Colorado":       ["Denver", "Colorado Springs", "Aurora", "Fort Collins", "Lakewood", "Boulder"],
-            "Connecticut":    ["Bridgeport", "New Haven", "Hartford", "Stamford", "Waterbury"],
-            "Delaware":       ["Wilmington", "Dover", "Newark", "Middletown", "Smyrna"],
-            "Florida":        ["Jacksonville", "Miami", "Tampa", "Orlando", "St. Petersburg", "Hialeah", "Tallahassee", "Fort Lauderdale"],
-            "Georgia":        ["Atlanta", "Augusta", "Columbus", "Macon", "Savannah", "Athens"],
-            "Hawaii":         ["Honolulu", "Hilo", "Kailua", "Pearl City", "Waipahu"],
-            "Idaho":          ["Boise", "Meridian", "Nampa", "Idaho Falls", "Pocatello"],
-            "Illinois":       ["Chicago", "Aurora", "Rockford", "Joliet", "Naperville", "Springfield"],
-            "Indiana":        ["Indianapolis", "Fort Wayne", "Evansville", "South Bend", "Carmel"],
-            "Iowa":           ["Des Moines", "Cedar Rapids", "Davenport", "Sioux City", "Iowa City"],
-            "Kansas":         ["Wichita", "Overland Park", "Kansas City", "Olathe", "Topeka"],
-            "Kentucky":       ["Louisville", "Lexington", "Bowling Green", "Owensboro", "Covington"],
-            "Louisiana":      ["New Orleans", "Baton Rouge", "Shreveport", "Metairie", "Lafayette"],
-            "Maine":          ["Portland", "Lewiston", "Bangor", "South Portland", "Auburn"],
-            "Maryland":       ["Baltimore", "Frederick", "Rockville", "Gaithersburg", "Bowie"],
-            "Massachusetts":  ["Boston", "Worcester", "Springfield", "Cambridge", "Lowell"],
-            "Michigan":       ["Detroit", "Grand Rapids", "Warren", "Sterling Heights", "Ann Arbor"],
-            "Minnesota":      ["Minneapolis", "Saint Paul", "Rochester", "Duluth", "Bloomington"],
-            "Mississippi":    ["Jackson", "Gulfport", "Southaven", "Hattiesburg", "Biloxi"],
-            "Missouri":       ["Kansas City", "Saint Louis", "Springfield", "Columbia", "Independence"],
-            "Montana":        ["Billings", "Missoula", "Great Falls", "Bozeman", "Butte"],
-            "Nebraska":       ["Omaha", "Lincoln", "Bellevue", "Grand Island", "Kearney"],
-            "Nevada":         ["Las Vegas", "Henderson", "Reno", "North Las Vegas", "Sparks"],
-            "New Hampshire":  ["Manchester", "Nashua", "Concord", "Dover", "Rochester"],
-            "New Jersey":     ["Newark", "Jersey City", "Paterson", "Elizabeth", "Trenton"],
-            "New Mexico":     ["Albuquerque", "Las Cruces", "Rio Rancho", "Santa Fe", "Roswell"],
-            "New York":       ["New York City", "Buffalo", "Rochester", "Yonkers", "Syracuse", "Albany"],
-            "North Carolina": ["Charlotte", "Raleigh", "Greensboro", "Durham", "Winston-Salem"],
-            "North Dakota":   ["Fargo", "Bismarck", "Grand Forks", "Minot", "West Fargo"],
-            "Ohio":           ["Columbus", "Cleveland", "Cincinnati", "Toledo", "Akron"],
-            "Oklahoma":       ["Oklahoma City", "Tulsa", "Norman", "Broken Arrow", "Edmond"],
-            "Oregon":         ["Portland", "Eugene", "Salem", "Gresham", "Hillsboro"],
-            "Pennsylvania":   ["Philadelphia", "Pittsburgh", "Allentown", "Erie", "Reading"],
-            "Rhode Island":   ["Providence", "Cranston", "Warwick", "Pawtucket", "East Providence"],
-            "South Carolina": ["Columbia", "Charleston", "North Charleston", "Mount Pleasant", "Greenville"],
-            "South Dakota":   ["Sioux Falls", "Rapid City", "Aberdeen", "Brookings", "Watertown"],
-            "Tennessee":      ["Nashville", "Memphis", "Knoxville", "Chattanooga", "Clarksville"],
-            "Texas":          ["Houston", "San Antonio", "Dallas", "Austin", "Fort Worth", "El Paso", "Arlington"],
-            "Utah":           ["Salt Lake City", "West Valley City", "Provo", "West Jordan", "Orem"],
-            "Vermont":        ["Burlington", "South Burlington", "Rutland", "Barre", "Montpelier"],
-            "Virginia":       ["Virginia Beach", "Norfolk", "Chesapeake", "Richmond", "Newport News"],
-            "Washington":     ["Seattle", "Spokane", "Tacoma", "Vancouver", "Bellevue"],
-            "West Virginia":  ["Charleston", "Huntington", "Morgantown", "Parkersburg", "Wheeling"],
-            "Wisconsin":      ["Milwaukee", "Madison", "Green Bay", "Kenosha", "Racine"],
-            "Wyoming":        ["Cheyenne", "Casper", "Laramie", "Gillette", "Rock Springs"],
-        },
-    },
-    "AU": {
-        "states":   [
-            "New South Wales", "Victoria", "Queensland", "South Australia",
-            "Western Australia", "Tasmania", "Northern Territory",
-            "Australian Capital Territory",
-        ],
-        "networks": ["Vodafone", "Telstra", "Optus", "TPG", "Aussie Broadband"],
-        "cities": {
-            "New South Wales":           ["Sydney", "Newcastle", "Wollongong", "Central Coast", "Maitland"],
-            "Victoria":                  ["Melbourne", "Geelong", "Ballarat", "Bendigo", "Shepparton"],
-            "Queensland":                ["Brisbane", "Gold Coast", "Sunshine Coast", "Townsville", "Cairns"],
-            "South Australia":           ["Adelaide", "Mount Gambier", "Whyalla", "Murray Bridge", "Port Augusta"],
-            "Western Australia":         ["Perth", "Bunbury", "Geraldton", "Kalgoorlie", "Albany"],
-            "Tasmania":                  ["Hobart", "Launceston", "Devonport", "Burnie", "Queenstown"],
-            "Northern Territory":        ["Darwin", "Alice Springs", "Palmerston", "Katherine", "Nhulunbuy"],
-            "Australian Capital Territory": ["Canberra", "Belconnen", "Tuggeranong", "Gungahlin", "Woden"],
-        },
-    },
-    "CA": {
-        "states":   [
-            "Alberta", "British Columbia", "Manitoba", "New Brunswick",
-            "Newfoundland and Labrador", "Nova Scotia", "Northwest Territories",
-            "Nunavut", "Ontario", "Prince Edward Island", "Quebec",
-            "Saskatchewan", "Yukon",
-        ],
-        "networks": ["Rogers", "Bell", "Telus", "Freedom Mobile", "Shaw", "Videotron"],
-        "cities": {
-            "Alberta":                  ["Calgary", "Edmonton", "Red Deer", "Lethbridge", "St. Albert"],
-            "British Columbia":          ["Vancouver", "Surrey", "Burnaby", "Richmond", "Kelowna", "Abbotsford"],
-            "Manitoba":                  ["Winnipeg", "Brandon", "Steinbach", "Thompson", "Portage la Prairie"],
-            "New Brunswick":             ["Moncton", "Saint John", "Fredericton", "Miramichi", "Edmundston"],
-            "Newfoundland and Labrador": ["St. John's", "Corner Brook", "Gander", "Grand Falls-Windsor"],
-            "Nova Scotia":               ["Halifax", "Dartmouth", "Sydney", "Truro", "New Glasgow"],
-            "Northwest Territories":     ["Yellowknife", "Hay River", "Inuvik", "Fort Smith"],
-            "Nunavut":                   ["Iqaluit", "Rankin Inlet", "Arviat", "Baker Lake"],
-            "Ontario":                   ["Toronto", "Ottawa", "Mississauga", "Brampton", "Hamilton", "London"],
-            "Prince Edward Island":      ["Charlottetown", "Summerside", "Stratford", "Cornwall"],
-            "Quebec":                    ["Montreal", "Quebec City", "Laval", "Gatineau", "Longueuil"],
-            "Saskatchewan":              ["Saskatoon", "Regina", "Prince Albert", "Moose Jaw", "Swift Current"],
-            "Yukon":                     ["Whitehorse", "Dawson City", "Watson Lake", "Haines Junction"],
-        },
-    },
-    "GB": {
-        "states":   ["England", "Scotland", "Wales", "Northern Ireland"],
-        "networks": ["BT", "EE", "O2", "Vodafone", "Three", "Sky", "Virgin Media"],
-        "cities": {
-            "England":          ["London", "Birmingham", "Manchester", "Leeds", "Liverpool", "Sheffield", "Bristol", "Leicester"],
-            "Scotland":         ["Glasgow", "Edinburgh", "Aberdeen", "Dundee", "Inverness", "Stirling"],
-            "Wales":            ["Cardiff", "Swansea", "Newport", "Bangor", "Wrexham"],
-            "Northern Ireland": ["Belfast", "Derry", "Lisburn", "Newry", "Armagh"],
-        },
-    },
-    "DE": {
-        "states":   [
-            "Bavaria", "Berlin", "Brandenburg", "Bremen", "Hamburg", "Hesse",
-            "Mecklenburg-Vorpommern", "Lower Saxony", "North Rhine-Westphalia",
-            "Rhineland-Palatinate", "Saarland", "Saxony", "Saxony-Anhalt",
-            "Schleswig-Holstein", "Thuringia",
-        ],
-        "networks": ["Deutsche Telekom", "Vodafone", "O2", "1&1", "Freenet"],
-        "cities": {
-            "Bavaria":                ["Munich", "Nuremberg", "Augsburg", "Regensburg", "Ingolstadt"],
-            "Berlin":                 ["Berlin"],
-            "Brandenburg":            ["Potsdam", "Cottbus", "Brandenburg an der Havel", "Frankfurt (Oder)"],
-            "Bremen":                 ["Bremen", "Bremerhaven"],
-            "Hamburg":                ["Hamburg"],
-            "Hesse":                  ["Frankfurt", "Wiesbaden", "Kassel", "Darmstadt", "Offenbach"],
-            "Mecklenburg-Vorpommern": ["Rostock", "Schwerin", "Neubrandenburg", "Stralsund"],
-            "Lower Saxony":           ["Hanover", "Braunschweig", "Osnabrück", "Oldenburg"],
-            "North Rhine-Westphalia": ["Cologne", "Düsseldorf", "Dortmund", "Essen", "Duisburg", "Bochum"],
-            "Rhineland-Palatinate":   ["Mainz", "Ludwigshafen", "Koblenz", "Trier", "Kaiserslautern"],
-            "Saarland":               ["Saarbrücken", "Neunkirchen", "Homburg", "Saarlouis"],
-            "Saxony":                 ["Dresden", "Leipzig", "Chemnitz", "Zwickau", "Erfurt"],
-            "Saxony-Anhalt":          ["Magdeburg", "Halle", "Dessau-Roßlau", "Lutherstadt Wittenberg"],
-            "Schleswig-Holstein":     ["Kiel", "Lübeck", "Flensburg", "Neumünster"],
-            "Thuringia":              ["Erfurt", "Jena", "Gera", "Weimar", "Gotha"],
-        },
-    },
-    "FR": {
-        "states":   [
-            "Ile-de-France", "Auvergne-Rhone-Alpes", "Bourgogne-Franche-Comte",
-            "Bretagne", "Centre-Val de Loire", "Grand Est",
-            "Hauts-de-France", "Normandie", "Nouvelle-Aquitaine",
-            "Occitanie", "Pays de la Loire", "Provence-Alpes-Cote d'Azur",
-        ],
-        "networks": ["Orange", "SFR", "Bouygues Telecom", "Free Mobile"],
-        "cities": {
-            "Ile-de-France":              ["Paris", "Boulogne-Billancourt", "Saint-Denis", "Argenteuil", "Versailles"],
-            "Auvergne-Rhone-Alpes":       ["Lyon", "Grenoble", "Saint-Etienne", "Clermont-Ferrand", "Annecy"],
-            "Bourgogne-Franche-Comte":    ["Dijon", "Besançon", "Chalon-sur-Saône", "Mâcon", "Auxerre"],
-            "Bretagne":                   ["Rennes", "Brest", "Quimper", "Lorient", "Vannes"],
-            "Centre-Val de Loire":        ["Tours", "Orléans", "Bourges", "Blois", "Chartres"],
-            "Grand Est":                  ["Strasbourg", "Reims", "Metz", "Nancy", "Mulhouse"],
-            "Hauts-de-France":            ["Lille", "Amiens", "Roubaix", "Tourcoing", "Dunkirk"],
-            "Normandie":                  ["Rouen", "Caen", "Le Havre", "Cherbourg", "Alençon"],
-            "Nouvelle-Aquitaine":         ["Bordeaux", "Limoges", "Pau", "Bayonne", "La Rochelle"],
-            "Occitanie":                  ["Toulouse", "Montpellier", "Nîmes", "Perpignan", "Narbonne"],
-            "Pays de la Loire":           ["Nantes", "Le Mans", "Angers", "Saint-Nazaire", "Laval"],
-            "Provence-Alpes-Cote d'Azur": ["Marseille", "Nice", "Toulon", "Aix-en-Provence", "Avignon"],
-        },
-    },
-    "JP": {
-        "states":   ["Tokyo", "Osaka", "Kyoto", "Aichi", "Fukuoka", "Hokkaido", "Kanagawa", "Okinawa"],
-        "networks": ["NTT", "SoftBank", "KDDI", "Rakuten Mobile"],
-        "cities": {
-            "Tokyo":    ["Shinjuku", "Shibuya", "Chiyoda", "Minato", "Setagaya", "Hachioji"],
-            "Osaka":    ["Osaka", "Sakai", "Higashiosaka", "Hirakata", "Toyonaka"],
-            "Kyoto":    ["Kyoto", "Uji", "Kameoka", "Maizuru", "Fukuchiyama"],
-            "Aichi":    ["Nagoya", "Toyota", "Okazaki", "Ichinomiya", "Toyohashi"],
-            "Fukuoka":  ["Fukuoka", "Kitakyushu", "Kurume", "Omuta", "Iizuka"],
-            "Hokkaido": ["Sapporo", "Asahikawa", "Hakodate", "Kushiro", "Tomakomai"],
-            "Kanagawa": ["Yokohama", "Kawasaki", "Sagamihara", "Fujisawa", "Yokosuka"],
-            "Okinawa":  ["Naha", "Okinawa City", "Uruma", "Ginowan", "Urasoe"],
-        },
-    },
-    "SG": {
-        "states":   ["Central", "North", "South", "East", "West"],
-        "networks": ["Singtel", "StarHub", "M1", "TPG Telecom"],
-        "cities": {
-            "Central": ["Orchard", "Marina Bay", "Toa Payoh", "Bishan", "Ang Mo Kio"],
-            "North":   ["Woodlands", "Yishun", "Sembawang", "Canberra"],
-            "South":   ["Buona Vista", "Queenstown", "Telok Blangah", "Harbourfront"],
-            "East":    ["Tampines", "Bedok", "Pasir Ris", "Changi", "Geylang"],
-            "West":    ["Jurong", "Bukit Batok", "Clementi", "Choa Chu Kang", "Boon Lay"],
-        },
-    },
-    "IN": {
-        "states":   [
-            "Maharashtra", "Delhi", "Karnataka", "Tamil Nadu", "Uttar Pradesh",
-            "West Bengal", "Gujarat", "Rajasthan", "Madhya Pradesh",
-            "Andhra Pradesh",
-        ],
-        "networks": ["Jio", "Airtel", "Vi", "BSNL", "MTNL"],
-        "cities": {
-            "Maharashtra":   ["Mumbai", "Pune", "Nagpur", "Nashik", "Aurangabad", "Thane"],
-            "Delhi":         ["New Delhi", "Delhi", "Noida", "Gurgaon", "Faridabad"],
-            "Karnataka":     ["Bengaluru", "Mysuru", "Mangaluru", "Hubli", "Belagavi"],
-            "Tamil Nadu":    ["Chennai", "Coimbatore", "Madurai", "Tiruchirappalli", "Salem"],
-            "Uttar Pradesh": ["Lucknow", "Kanpur", "Agra", "Varanasi", "Meerut", "Ghaziabad"],
-            "West Bengal":   ["Kolkata", "Howrah", "Durgapur", "Asansol", "Siliguri"],
-            "Gujarat":       ["Ahmedabad", "Surat", "Vadodara", "Rajkot", "Bhavnagar"],
-            "Rajasthan":     ["Jaipur", "Jodhpur", "Udaipur", "Kota", "Ajmer"],
-            "Madhya Pradesh":["Bhopal", "Indore", "Jabalpur", "Gwalior", "Ujjain"],
-            "Andhra Pradesh":["Visakhapatnam", "Vijayawada", "Guntur", "Nellore", "Tirupati"],
-        },
-    },
-    "BR": {
-        "states":   [
-            "Sao Paulo", "Rio de Janeiro", "Minas Gerais", "Bahia", "Parana",
-            "Rio Grande do Sul", "Pernambuco", "Ceara", "Para", "Maranhao",
-        ],
-        "networks": ["Claro", "Vivo", "TIM", "Oi", "Nextel"],
-        "cities": {
-            "Sao Paulo":       ["São Paulo", "Guarulhos", "Campinas", "São Bernardo do Campo", "Santo André"],
-            "Rio de Janeiro":  ["Rio de Janeiro", "São Gonçalo", "Duque de Caxias", "Nova Iguaçu", "Niterói"],
-            "Minas Gerais":    ["Belo Horizonte", "Uberlândia", "Contagem", "Juiz de Fora", "Montes Claros"],
-            "Bahia":           ["Salvador", "Feira de Santana", "Vitória da Conquista", "Camaçari", "Itabuna"],
-            "Parana":          ["Curitiba", "Londrina", "Maringá", "Ponta Grossa", "Cascavel"],
-            "Rio Grande do Sul":["Porto Alegre", "Caxias do Sul", "Canoas", "Pelotas", "Santa Maria"],
-            "Pernambuco":      ["Recife", "Caruaru", "Petrolina", "Olinda", "Paulista"],
-            "Ceara":           ["Fortaleza", "Caucaia", "Juazeiro do Norte", "Maracanaú", "Sobral"],
-            "Para":            ["Belém", "Ananindeua", "Santarém", "Marabá", "Castanhal"],
-            "Maranhao":        ["São Luís", "Imperatriz", "São José de Ribamar", "Timon", "Caxias"],
-        },
-    },
-}
+from shared import COUNTRY_DATA
 
 ALL_NETWORKS = sorted({n for d in COUNTRY_DATA.values() for n in d["networks"]})
 API_BASE     = "http://192.168.1.29"
 API_SUFFIX = ":1998/api"
 
 if getattr(sys, 'frozen', False):
-    # _BUNDLE_DIR: read-only bundled assets (icon, etc.) live in _MEIPASS temp folder.
     _BUNDLE_DIR = sys._MEIPASS
-    # _DATA_DIR: writable persistent data (data.json) lives next to the EXE,
-    # NOT in _MEIPASS which is deleted when the app exits.
     _DATA_DIR = os.path.dirname(sys.executable)
 else:
     _BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -264,8 +28,6 @@ else:
 
 APP_DATA_FILE = os.path.join(_DATA_DIR, "data.json")
 
-# If running as frozen EXE and data.json doesn't exist next to EXE yet,
-# seed it from the bundled copy inside _MEIPASS (first-run bootstrap).
 if getattr(sys, 'frozen', False) and not os.path.exists(APP_DATA_FILE):
     _bundled = os.path.join(sys._MEIPASS, "data.json")
     if os.path.exists(_bundled):
@@ -273,7 +35,7 @@ if getattr(sys, 'frozen', False) and not os.path.exists(APP_DATA_FILE):
         try:
             shutil.copy2(_bundled, APP_DATA_FILE)
         except Exception:
-            pass  # will fall back to empty dict
+            pass
 
 def _load_app_data() -> dict:
     """Load the unified data file. Returns dict with keys: api_base, proxies."""
@@ -613,7 +375,10 @@ QPushButton#autoCheckBtn {{
     background: {C['card']};
     color: {C['label']};
     border: 1.5px solid {C['border']};
+    border-right: none;
     border-radius: 8px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
     padding: 10px 18px;
     font-size: 10pt;
     font-weight: 700;
@@ -624,6 +389,7 @@ QPushButton#autoCheckBtn:checked {{
     background: {C['accent']};
     color: #fff;
     border-color: {C['accent']};
+    border-right: none;
 }}
 QPushButton#autoCheckBtn:disabled {{
     background: {C['card']};
@@ -631,11 +397,27 @@ QPushButton#autoCheckBtn:disabled {{
     border-color: {C['border']};
     opacity: 0.5;
 }}
-QPushButton#bulkCheckBtn {{
+QPushButton#timerIntervalBtn {{
     background: {C['card']};
     color: {C['label']};
     border: 1.5px solid {C['border']};
     border-radius: 8px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    padding: 0;
+    font-size: 13pt;
+}}
+QPushButton#timerIntervalBtn:hover {{ background: {C['border']}; color: {C['text']}; }}
+QPushButton#timerIntervalBtn:pressed {{ background: #252840; }}
+QPushButton#timerIntervalBtn:disabled {{ background: {C['card']}; color: {C['subtext']}; border-color: {C['border']}; }}
+QPushButton#bulkCheckBtn {{
+    background: {C['card']};
+    color: {C['label']};
+    border: 1.5px solid {C['border']};
+    border-right: none;
+    border-radius: 8px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
     padding: 10px 18px;
     font-size: 10pt;
     font-weight: 700;
@@ -648,6 +430,8 @@ QPushButton#bulkRefreshBtn {{
     color: {C['label']};
     border: 1.5px solid {C['border']};
     border-radius: 8px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
     padding: 10px 18px;
     font-size: 10pt;
     font-weight: 700;
@@ -767,9 +551,10 @@ QScrollArea#resultScroll {{
 }}
 QScrollArea#resultScroll > QWidget > QWidget {{
     background: {C['entry_bg']};
+    border-radius: 10px;
 }}
 QScrollBar:vertical {{
-    background: {C['entry_bg']};
+    background: #101322;
     width: 8px;
     border-radius: 4px;
     margin: 0;
@@ -781,6 +566,7 @@ QScrollBar::handle:vertical {{
 }}
 QScrollBar::handle:vertical:hover {{ background: {C['accent']}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: #101322; }}
 QFrame#divider {{
     background: {C['border']};
     border: none;
@@ -931,7 +717,7 @@ class ProxyCard(QWidget):
         self._status_lbl.setObjectName("statusUnknown")
         row1.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self._refresh_btn = QPushButton("↻  Renew")
+        self._refresh_btn = QPushButton("↻  Refresh")
         self._refresh_btn.setObjectName("cardRefreshBtn")
         self._refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._refresh_btn.setFixedHeight(28)
@@ -1392,26 +1178,122 @@ class BlurOverlay(QWidget):
         event.accept()
 
 
+# ─── Timer interval popover ────────────────────────────────────────────────────
+class TimerPopover(QWidget):
+    interval_changed = Signal(int)
+
+    def __init__(self, initial: int = 30, parent=None):
+        super().__init__(parent, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        self.setObjectName("timerPopover")
+        self.setFixedWidth(230)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+
+        header = QHBoxLayout()
+        lbl = QLabel("Check interval")
+        lbl.setObjectName("timerPopoverLbl")
+        self._val_lbl = QLabel(f"{initial}s")
+        self._val_lbl.setObjectName("timerPopoverVal")
+        header.addWidget(lbl)
+        header.addStretch()
+        header.addWidget(self._val_lbl)
+        layout.addLayout(header)
+
+        self._slider = QSlider(Qt.Orientation.Horizontal)
+        self._slider.setRange(5, 300)
+        self._slider.setSingleStep(5)
+        self._slider.setPageStep(15)
+        self._slider.setValue(initial)
+        self._slider.valueChanged.connect(self._on_value_changed)
+        layout.addWidget(self._slider)
+
+        range_row = QHBoxLayout()
+        r1 = QLabel("5s"); r1.setObjectName("timerPopoverRange")
+        r2 = QLabel("300s"); r2.setObjectName("timerPopoverRange")
+        range_row.addWidget(r1)
+        range_row.addStretch()
+        range_row.addWidget(r2)
+        layout.addLayout(range_row)
+
+        self.setStyleSheet(f"""
+            QWidget#timerPopover {{
+                background: {C['card']};
+                border: 1.5px solid {C['border']};
+                border-radius: 10px;
+            }}
+            QLabel#timerPopoverLbl {{
+                color: {C['label']};
+                font-size: 9pt;
+                font-weight: 700;
+                background: transparent;
+            }}
+            QLabel#timerPopoverVal {{
+                color: {C['accent']};
+                font-size: 9pt;
+                font-weight: 700;
+                background: transparent;
+            }}
+            QLabel#timerPopoverRange {{
+                color: {C['subtext']};
+                font-size: 7pt;
+                background: transparent;
+            }}
+            QSlider::groove:horizontal {{
+                height: 4px;
+                background: {C['border']};
+                border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {C['accent']};
+                border: none;
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {C['accent']};
+                border-radius: 2px;
+            }}
+        """)
+
+    def set_value(self, val: int):
+        self._slider.blockSignals(True)
+        self._slider.setValue(val)
+        self._slider.blockSignals(False)
+        self._val_lbl.setText(f"{val}s")
+
+    def _on_value_changed(self, val: int):
+        self._val_lbl.setText(f"{val}s")
+        self.interval_changed.emit(val)
+
+
 # ─── Main window ───────────────────────────────────────────────────────────────
 class ProxyApp(QMainWindow):
     _status_sig = Signal(str, str)
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Proxer - Auto retrieve proxies network carrier from Cliproxy")
+        self.setWindowTitle("Proxer - Auto rotate proxies from Cliproxy")
         self.setFixedSize(760, 720)
         self._status_sig.connect(self._apply_status)
         self._auto_check_enabled = False
+        self._auto_check_interval = 60
         self._auto_check_timer = QTimer()
         self._auto_check_timer.setSingleShot(True)   # fire once; restarted manually after cycle
         self._auto_check_timer.timeout.connect(self._auto_check_all_proxies)
         self._countdown_timer = QTimer()
         self._countdown_timer.timeout.connect(self._update_countdown)
-        self._countdown_remaining = 30
+        self._countdown_remaining = self._auto_check_interval
         self._auto_check_pending = 0   # number of cards still being processed in current cycle
         self._build_ui()
         self._center()
         self._set_defaults()
+        # Timer interval popover (created after _build_ui so C palette is available)
+        self._timer_popover = TimerPopover(initial=self._auto_check_interval, parent=self)
+        self._timer_popover.interval_changed.connect(self._on_interval_changed)
         self._toggle_auto_check()  # Enable auto-check by default
 
     def _center(self):
@@ -1576,15 +1458,22 @@ class ProxyApp(QMainWindow):
         auto_check_layout = QHBoxLayout(self._auto_check_btn)
         auto_check_layout.setContentsMargins(10, 0, 0, 0)
         auto_check_layout.setSpacing(0)
-        self._auto_check_label = QLabel("⏰ Auto mode:")
+        self._auto_check_label = QLabel("⏰ Auto rotate:")
         self._auto_check_label.setStyleSheet(f"color: {C['label']}; background: transparent;")
         self._auto_check_status = QLabel("OFF")
         self._auto_check_status.setStyleSheet(f"color: {C['subtext']}; background: transparent;")
         auto_check_layout.addWidget(self._auto_check_label)
-        auto_check_layout.addSpacing(2)
+        auto_check_layout.addSpacing(3)
         auto_check_layout.addWidget(self._auto_check_status)
         auto_check_layout.addStretch()
         self._auto_check_btn.clicked.connect(self._toggle_auto_check)
+
+        self._timer_interval_btn = QPushButton("⏱")
+        self._timer_interval_btn.setObjectName("timerIntervalBtn")
+        self._timer_interval_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._timer_interval_btn.setFixedSize(36, 36)
+        self._timer_interval_btn.setEnabled(False)
+        self._timer_interval_btn.clicked.connect(self._show_timer_popover)
 
         self._bulk_check_btn = QPushButton("⚡Bulk check")
         self._bulk_check_btn.setObjectName("bulkCheckBtn")
@@ -1602,11 +1491,23 @@ class ProxyApp(QMainWindow):
         self._bulk_refresh_btn.setEnabled(False)
         self._bulk_refresh_btn.clicked.connect(self._bulk_refresh)
 
+        bulk_layout = QHBoxLayout()
+        bulk_layout.setSpacing(0)
+        bulk_layout.setContentsMargins(0, 0, 0, 0)
+        bulk_layout.addWidget(self._bulk_check_btn)
+        bulk_layout.addWidget(self._bulk_refresh_btn)
+
         act.addWidget(self._fetch_btn, 2)
         act.addWidget(self._clear_cache_btn, 1)
-        act.addWidget(self._bulk_check_btn, 1)
-        act.addWidget(self._bulk_refresh_btn, 1)
-        act.addWidget(self._auto_check_btn, 2)
+        act.addLayout(bulk_layout, 2)
+
+        auto_check_group = QHBoxLayout()
+        auto_check_group.setSpacing(0)
+        auto_check_group.setContentsMargins(0, 0, 0, 0)
+        auto_check_group.addWidget(self._auto_check_btn)
+        auto_check_group.addWidget(self._timer_interval_btn)
+        act.addLayout(auto_check_group, 2)
+
         content_layout.addLayout(act)
         content_layout.addSpacing(6)
 
@@ -1977,12 +1878,12 @@ class ProxyApp(QMainWindow):
                 f"color: {color}; font-size: 8pt; background: transparent;")
 
     def _toggle_auto_check(self):
-        """Toggle automatic proxy checking every 30 seconds."""
+        """Toggle automatic proxy checking."""
         self._auto_check_enabled = not self._auto_check_enabled
         if self._auto_check_enabled:
             self._auto_check_pending = 0
-            self._auto_check_timer.start(30000)  # 30 seconds (singleShot)
-            self._countdown_remaining = 30
+            self._auto_check_timer.start(self._auto_check_interval * 1000)
+            self._countdown_remaining = self._auto_check_interval
             self._countdown_timer.start(1000)  # Update every second
             self._auto_check_status.setText("ON")
             self._auto_check_status.setStyleSheet(f"color: {C['success']}; background: transparent;")
@@ -2029,12 +1930,34 @@ class ProxyApp(QMainWindow):
                 if widget.objectName() == "proxyCard" and hasattr(widget, 'update_button_visibility'):
                     widget.update_button_visibility(self._auto_check_enabled)
 
+    def _show_timer_popover(self):
+        """Show the timer interval popover below the timer button, right-aligned."""
+        self._timer_popover.set_value(self._auto_check_interval)
+        btn = self._timer_interval_btn
+        # Right-align popover to the button's right edge
+        pos = btn.mapToGlobal(QPoint(btn.width() - self._timer_popover.width(), btn.height() + 4))
+        self._timer_popover.move(pos)
+        self._timer_popover.show()
+
+    def _on_interval_changed(self, val: int):
+        """Called when the user moves the timer popover slider."""
+        self._auto_check_interval = val
+        if self._auto_check_enabled:
+            # Restart both timers with the new interval
+            self._auto_check_timer.stop()
+            self._countdown_timer.stop()
+            self._auto_check_timer.start(self._auto_check_interval * 1000)
+            self._countdown_remaining = self._auto_check_interval
+            self._countdown_timer.start(1000)
+            self._update_countdown_display()
+
     def _update_auto_check_btn_state(self, count: int = None):
         """Enable/disable the Auto Check button based on whether there are proxy cards."""
         if count is None:
             count = self._result_layout.count() - 1  # exclude stretch
         has_proxies = count > 0
         self._auto_check_btn.setEnabled(has_proxies)
+        self._timer_interval_btn.setEnabled(has_proxies)
         self._bulk_check_btn.setEnabled(has_proxies)
         self._bulk_refresh_btn.setEnabled(has_proxies)
         if not has_proxies and self._auto_check_enabled:
@@ -2090,9 +2013,9 @@ class ProxyApp(QMainWindow):
         """Restart countdown and schedule the next auto-check cycle."""
         if not self._auto_check_enabled:
             return
-        self._countdown_remaining = 30
+        self._countdown_remaining = self._auto_check_interval
         self._countdown_timer.start(1000)
-        self._auto_check_timer.start(30000)  # singleShot fires after 30 s
+        self._auto_check_timer.start(self._auto_check_interval * 1000)
         self._update_countdown_display()
 
     def _bulk_check(self):
@@ -2146,7 +2069,7 @@ class ProxyApp(QMainWindow):
         self._clear_rows()
         self._res_count_lbl.setText("0 proxies")
         self._set_status("🗑  Cache cleared", C['subtext'])
-# ═══════════════════════════════════════════════════════════════════════════════
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyleSheet(STYLESHEET)

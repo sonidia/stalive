@@ -3,24 +3,6 @@
   "proxies": [
     {
       "ip": "192.168.1.13",
-      "port": "2000",
-      "country": "US",
-      "state": "Florida",
-      "city": "Jacksonville",
-      "isp": "ATT",
-      "_city": "Jacksonville"
-    },
-    {
-      "ip": "192.168.1.13",
-      "port": "2001",
-      "country": "US",
-      "state": "Florida",
-      "city": "Jacksonville",
-      "isp": "ATT",
-      "_city": "Jacksonville"
-    },
-    {
-      "ip": "192.168.1.13",
       "port": "2003",
       "country": "US",
       "state": "Florida",
@@ -49,6 +31,15 @@
     {
       "ip": "192.168.1.13",
       "port": "2004",
+      "country": "US",
+      "state": "Florida",
+      "city": "Jacksonville",
+      "isp": "ATT",
+      "_city": "Jacksonville"
+    },
+    {
+      "ip": "192.168.1.13",
+      "port": "2001",
       "country": "US",
       "state": "Florida",
       "city": "Jacksonville",

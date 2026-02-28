@@ -502,7 +502,7 @@ QLabel#pingLabel {{
 /* Card action buttons */
 QPushButton#cardRefreshBtn {{
     background: transparent;
-    color: {C['subtext']};
+    color: {C['accent']};
     border: 1.5px solid {C['border']};
     border-radius: 6px;
     padding: 3px 10px;
@@ -585,6 +585,34 @@ QLabel#badge {{
     padding: 1px 7px;
     font-size: 8pt;
     font-weight: 700;
+}}
+/* ── QMessageBox ── */
+QMessageBox {{
+    background: {C['panel']};
+}}
+QMessageBox QLabel {{
+    color: {C['text']};
+    background: transparent;
+    font-size: 10pt;
+}}
+QMessageBox QPushButton {{
+    background: {C['card']};
+    color: {C['text']};
+    border: 1.5px solid {C['border']};
+    border-radius: 6px;
+    padding: 5px 18px;
+    font-size: 9pt;
+    font-weight: 700;
+    min-width: 72px;
+}}
+QMessageBox QPushButton:hover {{
+    background: {C['accent']};
+    color: #fff;
+    border-color: {C['accent']};
+}}
+QMessageBox QPushButton:pressed {{
+    background: #5a52e0;
+    color: #fff;
 }}
 """
 
@@ -814,6 +842,13 @@ class ProxyCard(QWidget):
     # ── Delete ──
     def _do_delete(self):
         ip, port = self._ip_port()
+        reply = QMessageBox.question(
+            self, "Confirm Delete",
+            f"Delete proxy {ip}:{port}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
         delete_proxy_from_file(ip, port)
         self.deleted.emit(self)
 
@@ -1363,11 +1398,13 @@ class ProxyApp(QMainWindow):
         self._api_edit = QLineEdit(load_api_base())
         self._api_edit.setPlaceholderText("http://host:port")
         self._api_edit.setFixedHeight(34)
-        self._api_save_btn = QPushButton("Save")
+        self._api_save_btn = QPushButton("💾 Save")
         self._api_save_btn.setObjectName("clearBtn")
         self._api_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._api_save_btn.setFixedSize(70, 36)
+        self._api_save_btn.setFixedSize(90, 36)
+        self._api_save_btn.setEnabled(False)
         self._api_save_btn.clicked.connect(self._save_api_base_manual)
+        self._api_edit.textChanged.connect(self._on_api_url_changed)
         self._api_edit.returnPressed.connect(self._save_api_base)
         self._api_edit.editingFinished.connect(self._save_api_base)
 
@@ -1479,8 +1516,9 @@ class ProxyApp(QMainWindow):
         self._auto_check_btn = QPushButton()
         self._auto_check_btn.setObjectName("autoCheckBtn")
         self._auto_check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._auto_check_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._auto_check_btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self._auto_check_btn.setFixedHeight(36)
+        self._auto_check_btn.setFixedWidth(140)
         auto_check_layout = QHBoxLayout(self._auto_check_btn)
         auto_check_layout.setContentsMargins(10, 0, 0, 0)
         auto_check_layout.setSpacing(0)
@@ -1491,7 +1529,6 @@ class ProxyApp(QMainWindow):
         auto_check_layout.addWidget(self._auto_check_label)
         auto_check_layout.addSpacing(3)
         auto_check_layout.addWidget(self._auto_check_status)
-        auto_check_layout.addStretch()
         self._auto_check_btn.clicked.connect(self._toggle_auto_check)
 
         self._timer_interval_btn = QPushButton("⏱")
@@ -1517,7 +1554,9 @@ class ProxyApp(QMainWindow):
         self._bulk_refresh_btn.setEnabled(False)
         self._bulk_refresh_btn.clicked.connect(self._bulk_refresh)
 
-        bulk_layout = QHBoxLayout()
+        self._bulk_widget = QWidget()
+        self._bulk_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        bulk_layout = QHBoxLayout(self._bulk_widget)
         bulk_layout.setSpacing(0)
         bulk_layout.setContentsMargins(0, 0, 0, 0)
         bulk_layout.addWidget(self._bulk_check_btn)
@@ -1525,14 +1564,16 @@ class ProxyApp(QMainWindow):
 
         act.addWidget(self._fetch_btn, 2)
         act.addWidget(self._clear_cache_btn, 1)
-        act.addLayout(bulk_layout, 2)
+        act.addWidget(self._bulk_widget, 2)
 
-        auto_check_group = QHBoxLayout()
+        self._auto_check_container = QWidget()
+        self._auto_check_container.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        auto_check_group = QHBoxLayout(self._auto_check_container)
         auto_check_group.setSpacing(0)
         auto_check_group.setContentsMargins(0, 0, 0, 0)
         auto_check_group.addWidget(self._auto_check_btn)
         auto_check_group.addWidget(self._timer_interval_btn)
-        act.addLayout(auto_check_group, 2)
+        act.addWidget(self._auto_check_container, 0)
 
         content_layout.addLayout(act)
         content_layout.addSpacing(12)
@@ -1611,6 +1652,11 @@ class ProxyApp(QMainWindow):
         self._city_cb.set_items(cities)
 
     # ── API Base ─────────────────────────────────────────────────────────────
+    def _on_api_url_changed(self, text: str):
+        """Enable Save button only when the URL differs from what is currently saved."""
+        current_saved = load_api_base()
+        self._api_save_btn.setEnabled(text.strip() != current_saved.strip())
+
     def _save_api_base(self, show_status: bool = False):
         url = self._api_edit.text().strip()
         if not url:
@@ -1701,9 +1747,10 @@ class ProxyApp(QMainWindow):
             QMessageBox.warning(self, "Invalid URL", "Invalid URL format.")
             return
         save_api_base(url)
-        self._set_status("✓  API URL saved", C['success'])
+        self._api_save_btn.setEnabled(False)
+        self._api_save_btn.setText("✓ Saved")
+        QTimer.singleShot(1000, lambda: self._api_save_btn.setText("💾 Save"))
 
-    # ── Fetch ────────────────────────────────────────────────────────────────
     def _fetch(self):
         country = self._area_cb.current_value().upper()
         if not country:
@@ -1919,6 +1966,9 @@ class ProxyApp(QMainWindow):
             self._auto_check_status.setStyleSheet(f"color: {C['subtext']}; background: transparent;")
             self._auto_check_btn.setProperty("checked", False)
             self._set_status("", C['subtext'])  # Clear countdown display
+        # Show/hide bulk buttons and stretch fetch button accordingly
+        self._bulk_widget.setVisible(not self._auto_check_enabled)
+
         # Force style update
         self._auto_check_btn.style().unpolish(self._auto_check_btn)
         self._auto_check_btn.style().polish(self._auto_check_btn)
@@ -2077,7 +2127,7 @@ class ProxyApp(QMainWindow):
         """Wipe all saved proxies and clear the result view."""
         reply = QMessageBox.question(
             self, "Clear Cache",
-            "Xóa toàn bộ proxy đã lưu?",
+            "Delete all saved proxies?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:

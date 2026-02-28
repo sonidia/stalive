@@ -8,7 +8,9 @@
       "state": "Florida",
       "city": "Jacksonville",
       "isp": "ATT",
-      "_city": "Jacksonville"
+      "_city": "Jacksonville",
+      "response_ip": "108.248.137.78",
+      "ping_ms": 1242.3357000006945
     },
     {
       "ip": "192.168.1.13",
@@ -17,7 +19,9 @@
       "state": "Florida",
       "city": "Jacksonville",
       "isp": "ATT",
-      "_city": "Jacksonville"
+      "_city": "Jacksonville",
+      "response_ip": "70.139.17.187",
+      "ping_ms": 3004.360299999462
     },
     {
       "ip": "192.168.1.13",
@@ -26,7 +30,9 @@
       "state": "Florida",
       "city": "Jacksonville",
       "isp": "ATT",
-      "_city": "Jacksonville"
+      "_city": "Jacksonville",
+      "response_ip": "104.14.66.70",
+      "ping_ms": 3889.4259999997303
     },
     {
       "ip": "192.168.1.13",
@@ -35,7 +41,9 @@
       "state": "Florida",
       "city": "Jacksonville",
       "isp": "ATT",
-      "_city": "Jacksonville"
+      "_city": "Jacksonville",
+      "response_ip": "75.23.231.124",
+      "ping_ms": 3555.6945000007545
     },
     {
       "ip": "192.168.1.13",
@@ -44,7 +52,9 @@
       "state": "Florida",
       "city": "Jacksonville",
       "isp": "ATT",
-      "_city": "Jacksonville"
+      "_city": "Jacksonville",
+      "response_ip": "104.6.212.71",
+      "ping_ms": 1199.0592000001925
     }
   ]
 }

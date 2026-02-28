@@ -5,7 +5,7 @@ import time
 import os
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
-from PySide6.QtGui     import QColor, QFont, QIcon, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout, QPainterPath, QBrush
+from PySide6.QtGui     import QColor, QFont, QIcon, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout, QPainterPath, QBrush, QPixmap, QPolygon
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QLineEdit, QComboBox, QPushButton,
@@ -143,8 +143,176 @@ def delete_proxy_from_file(ip: str, port: str):
     except Exception as e:
         print(f"Error deleting proxy: {e}")
 
+def update_proxy_in_file(ip: str, port: str, updates: dict):
+    """Update specific fields of an existing proxy entry in the unified data file."""
+    try:
+        data = _load_app_data()
+        proxies = data.get("proxies", [])
+        key = f"{ip}:{port}"
+        for p in proxies:
+            if f"{p.get('ip', p.get('host', ''))}:{p.get('port', '')}" == key:
+                p.update(updates)
+                break
+        data["proxies"] = proxies
+        _save_app_data(data)
+    except Exception as e:
+        print(f"Error updating proxy: {e}")
+
 # ─── Country Flags ─────────────────────────────────────────────────────────────
-def draw_country_flag(painter, country_code, rect):
+def flag_emoji(code: str) -> str:
+    """Convert a 2-letter ISO country code to its flag emoji (e.g. 'US' → '🇺🇸')."""
+    code = str(code).upper().strip()
+    if len(code) != 2 or not code.isalpha():
+        return ""
+    return "".join(chr(0x1F1E6 + ord(c) - ord('A')) for c in code)
+
+
+def make_flag_pixmap(country_code: str, width: int = 22, height: int = 14) -> QPixmap:
+    """Render a country flag as a QPixmap using the built-in painter logic."""
+    pix = QPixmap(width, height)
+    pix.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pix)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    r = QRect(0, 0, width, height)
+
+    if country_code == "US":
+        painter.fillRect(r, QColor("#B22234"))
+        stripe_h = max(1, height // 13)
+        for i in range(7):
+            painter.fillRect(QRect(0, i * 2 * stripe_h, width, stripe_h), QColor("#FFFFFF"))
+        painter.fillRect(QRect(0, 0, width * 2 // 5, height * 7 // 13), QColor("#3C3B6E"))
+
+    elif country_code == "GB":
+        painter.fillRect(r, QColor("#012169"))
+        bw, bh = width // 2 - 2, height // 2 - 2
+        painter.fillRect(QRect(width // 2 - 2, 0, 4, height), QColor("#FFFFFF"))
+        painter.fillRect(QRect(0, height // 2 - 2, width, 4), QColor("#FFFFFF"))
+        painter.fillRect(QRect(width // 2 - 1, 0, 2, height), QColor("#C8102E"))
+        painter.fillRect(QRect(0, height // 2 - 1, width, 2), QColor("#C8102E"))
+
+    elif country_code == "DE":
+        h3 = height // 3
+        painter.fillRect(QRect(0, 0,      width, h3     ), QColor("#000000"))
+        painter.fillRect(QRect(0, h3,     width, h3     ), QColor("#DD0000"))
+        painter.fillRect(QRect(0, h3 * 2, width, height - h3 * 2), QColor("#FFCC00"))
+
+    elif country_code == "FR":
+        w3 = width // 3
+        painter.fillRect(QRect(0,       0, w3,              height), QColor("#002654"))
+        painter.fillRect(QRect(w3,      0, w3,              height), QColor("#FFFFFF"))
+        painter.fillRect(QRect(w3 * 2,  0, width - w3 * 2, height), QColor("#ED2939"))
+
+    elif country_code == "JP":
+        painter.fillRect(r, QColor("#FFFFFF"))
+        painter.setBrush(QColor("#BC002D"))
+        cx, cy = width // 2, height // 2
+        painter.drawEllipse(cx - 4, cy - 4, 8, 8)
+
+    elif country_code == "CA":
+        w3 = width // 4
+        painter.fillRect(QRect(0,          0, w3,              height), QColor("#FF0000"))
+        painter.fillRect(QRect(w3,         0, width - w3 * 2, height), QColor("#FFFFFF"))
+        painter.fillRect(QRect(width - w3, 0, w3,              height), QColor("#FF0000"))
+
+    elif country_code == "AU":
+        painter.fillRect(r, QColor("#012169"))
+        painter.fillRect(QRect(width // 2 - 2, 0, 4, height), QColor("#FFFFFF"))
+        painter.fillRect(QRect(0, height // 2 - 2, width, 4), QColor("#FFFFFF"))
+        painter.fillRect(QRect(width // 2 - 1, 0, 2, height), QColor("#C8102E"))
+        painter.fillRect(QRect(0, height // 2 - 1, width, 2), QColor("#C8102E"))
+
+    elif country_code == "SG":
+        painter.fillRect(QRect(0, 0,          width, height // 2), QColor("#ED2939"))
+        painter.fillRect(QRect(0, height // 2, width, height // 2), QColor("#FFFFFF"))
+
+    elif country_code == "IN":
+        h3 = height // 3
+        painter.fillRect(QRect(0, 0,      width, h3),              QColor("#FF9933"))
+        painter.fillRect(QRect(0, h3,     width, h3),              QColor("#FFFFFF"))
+        painter.fillRect(QRect(0, h3 * 2, width, height - h3 * 2), QColor("#128807"))
+
+    elif country_code == "BR":
+        painter.fillRect(r, QColor("#009739"))
+        cx, cy = width // 2, height // 2
+        points = [
+            QPoint(cx, 2), QPoint(width - 2, cy),
+            QPoint(cx, height - 2), QPoint(2, cy),
+        ]
+        painter.setBrush(QColor("#FFDF00"))
+        painter.drawPolygon(QPolygon(points))
+
+    elif country_code == "KR":
+        painter.fillRect(r, QColor("#FFFFFF"))
+        painter.setBrush(QColor("#CD2E3A"))
+        painter.drawEllipse(width // 2 - 4, height // 2 - 4, 8, 8)
+
+    elif country_code == "CN":
+        painter.fillRect(r, QColor("#DE2910"))
+        painter.setBrush(QColor("#FFDE00"))
+        painter.drawEllipse(2, 2, 6, 6)
+
+    elif country_code == "RU":
+        h3 = height // 3
+        painter.fillRect(QRect(0, 0,      width, h3),              QColor("#FFFFFF"))
+        painter.fillRect(QRect(0, h3,     width, h3),              QColor("#0039A6"))
+        painter.fillRect(QRect(0, h3 * 2, width, height - h3 * 2), QColor("#D52B1E"))
+
+    elif country_code == "NL":
+        h3 = height // 3
+        painter.fillRect(QRect(0, 0,      width, h3),              QColor("#AE1C28"))
+        painter.fillRect(QRect(0, h3,     width, h3),              QColor("#FFFFFF"))
+        painter.fillRect(QRect(0, h3 * 2, width, height - h3 * 2), QColor("#21468B"))
+
+    elif country_code == "IT":
+        w3 = width // 3
+        painter.fillRect(QRect(0,       0, w3,              height), QColor("#009246"))
+        painter.fillRect(QRect(w3,      0, w3,              height), QColor("#FFFFFF"))
+        painter.fillRect(QRect(w3 * 2,  0, width - w3 * 2, height), QColor("#CE2B37"))
+
+    elif country_code == "ES":
+        h4 = height // 4
+        painter.fillRect(QRect(0, 0,       width, h4              ), QColor("#AA151B"))
+        painter.fillRect(QRect(0, h4,      width, height - h4 * 2  ), QColor("#F1BF00"))
+        painter.fillRect(QRect(0, height - h4, width, h4          ), QColor("#AA151B"))
+
+    elif country_code == "SE":
+        painter.fillRect(r, QColor("#006AA7"))
+        painter.fillRect(QRect(0, height // 2 - 2, width, 4), QColor("#FECC02"))
+        painter.fillRect(QRect(width // 3 - 2, 0, 4, height), QColor("#FECC02"))
+
+    elif country_code == "NO":
+        painter.fillRect(r, QColor("#EF2B2D"))
+        painter.fillRect(QRect(0, height // 2 - 2, width, 4), QColor("#FFFFFF"))
+        painter.fillRect(QRect(width // 3 - 2, 0, 4, height), QColor("#FFFFFF"))
+        painter.fillRect(QRect(0, height // 2 - 1, width, 2), QColor("#002868"))
+        painter.fillRect(QRect(width // 3 - 1, 0, 2, height), QColor("#002868"))
+
+    elif country_code == "NZ":
+        painter.fillRect(r, QColor("#012169"))
+        painter.fillRect(QRect(width // 2 - 2, 0, 4, height), QColor("#FFFFFF"))
+        painter.fillRect(QRect(0, height // 2 - 2, width, 4), QColor("#FFFFFF"))
+        painter.fillRect(QRect(width // 2 - 1, 0, 2, height), QColor("#C8102E"))
+        painter.fillRect(QRect(0, height // 2 - 1, width, 2), QColor("#C8102E"))
+
+    elif country_code == "MX":
+        w3 = width // 3
+        painter.fillRect(QRect(0,       0, w3,              height), QColor("#006847"))
+        painter.fillRect(QRect(w3,      0, w3,              height), QColor("#FFFFFF"))
+        painter.fillRect(QRect(w3 * 2,  0, width - w3 * 2, height), QColor("#CE1126"))
+
+    else:  # Generic: show a grey box with first 2 letters
+        painter.fillRect(r, QColor("#44475a"))
+        painter.setPen(QColor("#e2e8f0"))
+        font = painter.font()
+        font.setPointSizeF(5.5)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(r, Qt.AlignmentFlag.AlignCenter, country_code[:2])
+
+    painter.end()
+    return pix
+
     """Draw a simple flag icon for the given country code."""
     # Don't save/restore painter state as it may already be managed by caller
     # painter.save()
@@ -462,9 +630,20 @@ QLabel#proxyInfo {{
     background: transparent;
 }}
 QLabel#tagLabel {{
-    color: {C['accent2']};
-    font-size: 7pt;
+    color: {C['subtext']};
+    font-size: 8pt;
+    font-weight: 600;
     background: transparent;
+}}
+QWidget#tagLabel {{
+    background: transparent;
+}}
+QWidget#tagLabel QLabel {{
+    color: {C['subtext']};
+    font-size: 8pt;
+    font-weight: 600;
+    background: transparent;
+    border: none;
 }}
 QLabel#statusUnknown {{
     color: {C['subtext']};
@@ -495,9 +674,18 @@ QLabel#statusChecking {{
 }}
 QLabel#pingLabel {{
     color: {C['subtext']};
-    font-size: 7pt;
+    font-size: 8pt;
+    font-weight: 600;
     background: transparent;
     padding: 0 2px;
+}}
+QLabel#respIpLabel {{
+    color: {C['accent2']};
+    font-size: 9pt;
+    font-weight: 600;
+    background: transparent;
+    margin-left: 8px;
+    padding: 0 0;
 }}
 /* Card action buttons */
 QPushButton#cardRefreshBtn {{
@@ -534,7 +722,7 @@ QPushButton#cardDeleteBtn {{
     padding: 3px 10px;
     font-size: 8pt;
     font-weight: 700;
-    min-width: 68px;
+    min-width: 20px;
 }}
 QPushButton#cardDeleteBtn:hover   {{ background: {C['error']}; color: #fff; border-color: {C['error']}; }}
 QPushButton#cardDeleteBtn:pressed  {{ background: #d05555; color: #fff; }}
@@ -641,7 +829,7 @@ class FetchWorker(QObject):
 
 # ─── Proxy check worker ────────────────────────────────────────────────────────
 class ProxyCheckWorker(QObject):
-    result = Signal(bool, float)   # alive, elapsed_ms (-1 if failed)
+    result = Signal(bool, float, str)   # alive, elapsed_ms (-1 if failed), response_ip
 
     TEST_URL = "http://httpbin.org/ip"
 
@@ -658,9 +846,16 @@ class ProxyCheckWorker(QObject):
             t0 = time.monotonic()
             resp = requests.get(self.TEST_URL, proxies=proxies, timeout=8)
             elapsed = (time.monotonic() - t0) * 1000
-            self.result.emit(resp.status_code == 200, elapsed)
+            if resp.status_code == 200:
+                try:
+                    origin = resp.json().get("origin", "")
+                except Exception:
+                    origin = ""
+                self.result.emit(True, elapsed, origin)
+            else:
+                self.result.emit(False, elapsed, "")
         except Exception:
-            self.result.emit(False, -1.0)
+            self.result.emit(False, -1.0, "")
 
 
 # ─── Refresh worker (re-fetch one proxy slot by its original params) ───────────
@@ -745,6 +940,13 @@ class ProxyCard(QWidget):
         self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._copy_btn.setFixedHeight(24)
         ip_copy_layout.addWidget(self._copy_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        saved_resp_ip = self._proxy_dict.get("response_ip", "")
+        self._resp_ip_lbl = QLabel(f"→ {saved_resp_ip}" if saved_resp_ip else "")
+        self._resp_ip_lbl.setObjectName("respIpLabel")
+        self._resp_ip_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        ip_copy_layout.addWidget(self._resp_ip_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
+
         ip_copy_layout.addStretch()
 
         left_col.addLayout(ip_copy_layout)
@@ -756,17 +958,33 @@ class ProxyCard(QWidget):
 
         meta_fields = [
             ("country", "🌍"),
-            ("state",   "📍"),
-            ("city",    "🏙️"),
-            ("isp",     "📡"),
+            ("state",   "- 📍"),
+            ("city",    "- 🏙️"),
+            ("isp",     "- 📡"),
         ]
         has_tag = False
         for key, icon in meta_fields:
             val = self._proxy_dict.get(key, "")
             if val and str(val).strip():
-                tag = QLabel(f"{icon} {val}")
-                tag.setObjectName("tagLabel")
-                tags_layout.addWidget(tag)
+                if key == "country":
+                    # Wrap flag image + country code in a single container tag
+                    country_container = QWidget()
+                    country_container.setObjectName("tagLabel")
+                    c_layout = QHBoxLayout(country_container)
+                    c_layout.setContentsMargins(0, 0, 0, 0)
+                    c_layout.setSpacing(4)
+                    flag_lbl = QLabel()
+                    flag_lbl.setPixmap(make_flag_pixmap(str(val).upper()))
+                    flag_lbl.setFixedSize(19, 11)
+                    flag_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    c_layout.addWidget(flag_lbl)
+                    code_lbl = QLabel(val)
+                    c_layout.addWidget(code_lbl)
+                    tags_layout.addWidget(country_container, 0, Qt.AlignmentFlag.AlignVCenter)
+                else:
+                    tag = QLabel(f"{icon} {val}")
+                    tag.setObjectName("tagLabel")
+                    tags_layout.addWidget(tag)
                 has_tag = True
 
         if not has_tag:
@@ -793,7 +1011,8 @@ class ProxyCard(QWidget):
         self._status_lbl.setObjectName("statusUnknown")
         status_col.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignRight)
 
-        self._ping_lbl = QLabel("0 ms")
+        saved_ping = self._proxy_dict.get("ping_ms", None)
+        self._ping_lbl = QLabel(f"{saved_ping:.0f} ms" if saved_ping is not None else "")
         self._ping_lbl.setObjectName("pingLabel")
         status_col.addWidget(self._ping_lbl, 0, Qt.AlignmentFlag.AlignRight)
 
@@ -810,7 +1029,7 @@ class ProxyCard(QWidget):
         self._check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._check_btn.setFixedHeight(28)
 
-        self._delete_btn = QPushButton("✕  Delete")
+        self._delete_btn = QPushButton("❌")
         self._delete_btn.setObjectName("cardDeleteBtn")
         self._delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._delete_btn.setFixedHeight(28)
@@ -872,13 +1091,25 @@ class ProxyCard(QWidget):
         self._check_worker.result.connect(self._check_thread.quit)
         self._check_thread.start()
 
-    def _on_check_result(self, alive: bool, elapsed: float):
+    def _on_check_result(self, alive: bool, elapsed: float, response_ip: str = ""):
         self._check_btn.setEnabled(True)
         if alive:
             self._status_lbl.setObjectName("statusAlive")
             self._status_lbl.setText("● Alive")
             if elapsed >= 0:
                 self._ping_lbl.setText(f"{elapsed:.0f} ms")
+                self._proxy_dict["ping_ms"] = elapsed
+            # Update response IP label and persist to data.json
+            ip, port = self._ip_port()
+            updates: dict = {}
+            if elapsed >= 0:
+                updates["ping_ms"] = elapsed
+            if response_ip:
+                self._resp_ip_lbl.setText(f"→ {response_ip}")
+                self._proxy_dict["response_ip"] = response_ip
+                updates["response_ip"] = response_ip
+            if updates:
+                update_proxy_in_file(ip, port, updates)
             was_auto = self._auto_check_triggered
             self._auto_check_triggered = False  # Reset flag
             if was_auto:
@@ -887,6 +1118,7 @@ class ProxyCard(QWidget):
             self._status_lbl.setObjectName("statusDead")
             self._status_lbl.setText("✕ Dead")
             self._ping_lbl.setText("")
+            self._resp_ip_lbl.setText("")
             # Auto-refresh if this check was triggered automatically
             if self._auto_check_triggered:
                 self._auto_check_triggered = False  # Reset flag

@@ -3,7 +3,7 @@ import json
 import requests
 import os
 
-from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint
+from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
 from PySide6.QtGui     import QColor, QFont, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -15,72 +15,355 @@ from PySide6.QtWidgets import (
 # ─── Data ──────────────────────────────────────────────────────────────────────
 COUNTRY_DATA = {
     "US": {
-        "states":   ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL",
-                     "IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT",
-                     "NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI",
-                     "SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"],
-        "networks": ["ATT","Verizon","T-Mobile","Sprint","Comcast","Charter","CenturyLink","Cox"],
+        "states":   [
+            "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado",
+            "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho",
+            "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana",
+            "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
+            "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada",
+            "New Hampshire", "New Jersey", "New Mexico", "New York",
+            "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon",
+            "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota",
+            "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington",
+            "West Virginia", "Wisconsin", "Wyoming",
+        ],
+        "networks": ["ATT", "Verizon", "T-Mobile", "Sprint", "Comcast", "Charter", "CenturyLink", "Cox"],
+        "cities": {
+            "Alabama":        ["Birmingham", "Montgomery", "Huntsville", "Mobile", "Tuscaloosa"],
+            "Alaska":         ["Anchorage", "Fairbanks", "Juneau", "Sitka", "Ketchikan"],
+            "Arizona":        ["Phoenix", "Tucson", "Mesa", "Chandler", "Scottsdale", "Glendale", "Tempe"],
+            "Arkansas":       ["Little Rock", "Fort Smith", "Fayetteville", "Springdale", "Jonesboro"],
+            "California":     ["Los Angeles", "San Diego", "San Jose", "San Francisco", "Fresno", "Sacramento", "Long Beach", "Oakland"],
+            "Colorado":       ["Denver", "Colorado Springs", "Aurora", "Fort Collins", "Lakewood", "Boulder"],
+            "Connecticut":    ["Bridgeport", "New Haven", "Hartford", "Stamford", "Waterbury"],
+            "Delaware":       ["Wilmington", "Dover", "Newark", "Middletown", "Smyrna"],
+            "Florida":        ["Jacksonville", "Miami", "Tampa", "Orlando", "St. Petersburg", "Hialeah", "Tallahassee", "Fort Lauderdale"],
+            "Georgia":        ["Atlanta", "Augusta", "Columbus", "Macon", "Savannah", "Athens"],
+            "Hawaii":         ["Honolulu", "Hilo", "Kailua", "Pearl City", "Waipahu"],
+            "Idaho":          ["Boise", "Meridian", "Nampa", "Idaho Falls", "Pocatello"],
+            "Illinois":       ["Chicago", "Aurora", "Rockford", "Joliet", "Naperville", "Springfield"],
+            "Indiana":        ["Indianapolis", "Fort Wayne", "Evansville", "South Bend", "Carmel"],
+            "Iowa":           ["Des Moines", "Cedar Rapids", "Davenport", "Sioux City", "Iowa City"],
+            "Kansas":         ["Wichita", "Overland Park", "Kansas City", "Olathe", "Topeka"],
+            "Kentucky":       ["Louisville", "Lexington", "Bowling Green", "Owensboro", "Covington"],
+            "Louisiana":      ["New Orleans", "Baton Rouge", "Shreveport", "Metairie", "Lafayette"],
+            "Maine":          ["Portland", "Lewiston", "Bangor", "South Portland", "Auburn"],
+            "Maryland":       ["Baltimore", "Frederick", "Rockville", "Gaithersburg", "Bowie"],
+            "Massachusetts":  ["Boston", "Worcester", "Springfield", "Cambridge", "Lowell"],
+            "Michigan":       ["Detroit", "Grand Rapids", "Warren", "Sterling Heights", "Ann Arbor"],
+            "Minnesota":      ["Minneapolis", "Saint Paul", "Rochester", "Duluth", "Bloomington"],
+            "Mississippi":    ["Jackson", "Gulfport", "Southaven", "Hattiesburg", "Biloxi"],
+            "Missouri":       ["Kansas City", "Saint Louis", "Springfield", "Columbia", "Independence"],
+            "Montana":        ["Billings", "Missoula", "Great Falls", "Bozeman", "Butte"],
+            "Nebraska":       ["Omaha", "Lincoln", "Bellevue", "Grand Island", "Kearney"],
+            "Nevada":         ["Las Vegas", "Henderson", "Reno", "North Las Vegas", "Sparks"],
+            "New Hampshire":  ["Manchester", "Nashua", "Concord", "Dover", "Rochester"],
+            "New Jersey":     ["Newark", "Jersey City", "Paterson", "Elizabeth", "Trenton"],
+            "New Mexico":     ["Albuquerque", "Las Cruces", "Rio Rancho", "Santa Fe", "Roswell"],
+            "New York":       ["New York City", "Buffalo", "Rochester", "Yonkers", "Syracuse", "Albany"],
+            "North Carolina": ["Charlotte", "Raleigh", "Greensboro", "Durham", "Winston-Salem"],
+            "North Dakota":   ["Fargo", "Bismarck", "Grand Forks", "Minot", "West Fargo"],
+            "Ohio":           ["Columbus", "Cleveland", "Cincinnati", "Toledo", "Akron"],
+            "Oklahoma":       ["Oklahoma City", "Tulsa", "Norman", "Broken Arrow", "Edmond"],
+            "Oregon":         ["Portland", "Eugene", "Salem", "Gresham", "Hillsboro"],
+            "Pennsylvania":   ["Philadelphia", "Pittsburgh", "Allentown", "Erie", "Reading"],
+            "Rhode Island":   ["Providence", "Cranston", "Warwick", "Pawtucket", "East Providence"],
+            "South Carolina": ["Columbia", "Charleston", "North Charleston", "Mount Pleasant", "Greenville"],
+            "South Dakota":   ["Sioux Falls", "Rapid City", "Aberdeen", "Brookings", "Watertown"],
+            "Tennessee":      ["Nashville", "Memphis", "Knoxville", "Chattanooga", "Clarksville"],
+            "Texas":          ["Houston", "San Antonio", "Dallas", "Austin", "Fort Worth", "El Paso", "Arlington"],
+            "Utah":           ["Salt Lake City", "West Valley City", "Provo", "West Jordan", "Orem"],
+            "Vermont":        ["Burlington", "South Burlington", "Rutland", "Barre", "Montpelier"],
+            "Virginia":       ["Virginia Beach", "Norfolk", "Chesapeake", "Richmond", "Newport News"],
+            "Washington":     ["Seattle", "Spokane", "Tacoma", "Vancouver", "Bellevue"],
+            "West Virginia":  ["Charleston", "Huntington", "Morgantown", "Parkersburg", "Wheeling"],
+            "Wisconsin":      ["Milwaukee", "Madison", "Green Bay", "Kenosha", "Racine"],
+            "Wyoming":        ["Cheyenne", "Casper", "Laramie", "Gillette", "Rock Springs"],
+        },
     },
     "AU": {
-        "states":   ["NSW","VIC","QLD","SA","WA","TAS","NT","ACT"],
-        "networks": ["Vodafone","Telstra","Optus","TPG","Aussie Broadband"],
+        "states":   [
+            "New South Wales", "Victoria", "Queensland", "South Australia",
+            "Western Australia", "Tasmania", "Northern Territory",
+            "Australian Capital Territory",
+        ],
+        "networks": ["Vodafone", "Telstra", "Optus", "TPG", "Aussie Broadband"],
+        "cities": {
+            "New South Wales":           ["Sydney", "Newcastle", "Wollongong", "Central Coast", "Maitland"],
+            "Victoria":                  ["Melbourne", "Geelong", "Ballarat", "Bendigo", "Shepparton"],
+            "Queensland":                ["Brisbane", "Gold Coast", "Sunshine Coast", "Townsville", "Cairns"],
+            "South Australia":           ["Adelaide", "Mount Gambier", "Whyalla", "Murray Bridge", "Port Augusta"],
+            "Western Australia":         ["Perth", "Bunbury", "Geraldton", "Kalgoorlie", "Albany"],
+            "Tasmania":                  ["Hobart", "Launceston", "Devonport", "Burnie", "Queenstown"],
+            "Northern Territory":        ["Darwin", "Alice Springs", "Palmerston", "Katherine", "Nhulunbuy"],
+            "Australian Capital Territory": ["Canberra", "Belconnen", "Tuggeranong", "Gungahlin", "Woden"],
+        },
     },
     "CA": {
-        "states":   ["AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT"],
-        "networks": ["Rogers","Bell","Telus","Freedom Mobile","Shaw","Videotron"],
+        "states":   [
+            "Alberta", "British Columbia", "Manitoba", "New Brunswick",
+            "Newfoundland and Labrador", "Nova Scotia", "Northwest Territories",
+            "Nunavut", "Ontario", "Prince Edward Island", "Quebec",
+            "Saskatchewan", "Yukon",
+        ],
+        "networks": ["Rogers", "Bell", "Telus", "Freedom Mobile", "Shaw", "Videotron"],
+        "cities": {
+            "Alberta":                  ["Calgary", "Edmonton", "Red Deer", "Lethbridge", "St. Albert"],
+            "British Columbia":          ["Vancouver", "Surrey", "Burnaby", "Richmond", "Kelowna", "Abbotsford"],
+            "Manitoba":                  ["Winnipeg", "Brandon", "Steinbach", "Thompson", "Portage la Prairie"],
+            "New Brunswick":             ["Moncton", "Saint John", "Fredericton", "Miramichi", "Edmundston"],
+            "Newfoundland and Labrador": ["St. John's", "Corner Brook", "Gander", "Grand Falls-Windsor"],
+            "Nova Scotia":               ["Halifax", "Dartmouth", "Sydney", "Truro", "New Glasgow"],
+            "Northwest Territories":     ["Yellowknife", "Hay River", "Inuvik", "Fort Smith"],
+            "Nunavut":                   ["Iqaluit", "Rankin Inlet", "Arviat", "Baker Lake"],
+            "Ontario":                   ["Toronto", "Ottawa", "Mississauga", "Brampton", "Hamilton", "London"],
+            "Prince Edward Island":      ["Charlottetown", "Summerside", "Stratford", "Cornwall"],
+            "Quebec":                    ["Montreal", "Quebec City", "Laval", "Gatineau", "Longueuil"],
+            "Saskatchewan":              ["Saskatoon", "Regina", "Prince Albert", "Moose Jaw", "Swift Current"],
+            "Yukon":                     ["Whitehorse", "Dawson City", "Watson Lake", "Haines Junction"],
+        },
     },
     "GB": {
-        "states":   ["England","Scotland","Wales","Northern Ireland"],
-        "networks": ["BT","EE","O2","Vodafone","Three","Sky","Virgin Media"],
+        "states":   ["England", "Scotland", "Wales", "Northern Ireland"],
+        "networks": ["BT", "EE", "O2", "Vodafone", "Three", "Sky", "Virgin Media"],
+        "cities": {
+            "England":          ["London", "Birmingham", "Manchester", "Leeds", "Liverpool", "Sheffield", "Bristol", "Leicester"],
+            "Scotland":         ["Glasgow", "Edinburgh", "Aberdeen", "Dundee", "Inverness", "Stirling"],
+            "Wales":            ["Cardiff", "Swansea", "Newport", "Bangor", "Wrexham"],
+            "Northern Ireland": ["Belfast", "Derry", "Lisburn", "Newry", "Armagh"],
+        },
     },
     "DE": {
-        "states":   ["BY","BE","BB","HB","HH","HE","MV","NI","NW","RP","SL","SN","ST","SH","TH"],
-        "networks": ["Deutsche Telekom","Vodafone","O2","1&1","Freenet"],
+        "states":   [
+            "Bavaria", "Berlin", "Brandenburg", "Bremen", "Hamburg", "Hesse",
+            "Mecklenburg-Vorpommern", "Lower Saxony", "North Rhine-Westphalia",
+            "Rhineland-Palatinate", "Saarland", "Saxony", "Saxony-Anhalt",
+            "Schleswig-Holstein", "Thuringia",
+        ],
+        "networks": ["Deutsche Telekom", "Vodafone", "O2", "1&1", "Freenet"],
+        "cities": {
+            "Bavaria":                ["Munich", "Nuremberg", "Augsburg", "Regensburg", "Ingolstadt"],
+            "Berlin":                 ["Berlin"],
+            "Brandenburg":            ["Potsdam", "Cottbus", "Brandenburg an der Havel", "Frankfurt (Oder)"],
+            "Bremen":                 ["Bremen", "Bremerhaven"],
+            "Hamburg":                ["Hamburg"],
+            "Hesse":                  ["Frankfurt", "Wiesbaden", "Kassel", "Darmstadt", "Offenbach"],
+            "Mecklenburg-Vorpommern": ["Rostock", "Schwerin", "Neubrandenburg", "Stralsund"],
+            "Lower Saxony":           ["Hanover", "Braunschweig", "Osnabrück", "Oldenburg"],
+            "North Rhine-Westphalia": ["Cologne", "Düsseldorf", "Dortmund", "Essen", "Duisburg", "Bochum"],
+            "Rhineland-Palatinate":   ["Mainz", "Ludwigshafen", "Koblenz", "Trier", "Kaiserslautern"],
+            "Saarland":               ["Saarbrücken", "Neunkirchen", "Homburg", "Saarlouis"],
+            "Saxony":                 ["Dresden", "Leipzig", "Chemnitz", "Zwickau", "Erfurt"],
+            "Saxony-Anhalt":          ["Magdeburg", "Halle", "Dessau-Roßlau", "Lutherstadt Wittenberg"],
+            "Schleswig-Holstein":     ["Kiel", "Lübeck", "Flensburg", "Neumünster"],
+            "Thuringia":              ["Erfurt", "Jena", "Gera", "Weimar", "Gotha"],
+        },
     },
     "FR": {
-        "states":   ["IDF","ARA","BFC","BRE","CVL","GES","HDF","NOR","NAQ","OCC","PDL","PAC"],
-        "networks": ["Orange","SFR","Bouygues Telecom","Free Mobile"],
+        "states":   [
+            "Ile-de-France", "Auvergne-Rhone-Alpes", "Bourgogne-Franche-Comte",
+            "Bretagne", "Centre-Val de Loire", "Grand Est",
+            "Hauts-de-France", "Normandie", "Nouvelle-Aquitaine",
+            "Occitanie", "Pays de la Loire", "Provence-Alpes-Cote d'Azur",
+        ],
+        "networks": ["Orange", "SFR", "Bouygues Telecom", "Free Mobile"],
+        "cities": {
+            "Ile-de-France":              ["Paris", "Boulogne-Billancourt", "Saint-Denis", "Argenteuil", "Versailles"],
+            "Auvergne-Rhone-Alpes":       ["Lyon", "Grenoble", "Saint-Etienne", "Clermont-Ferrand", "Annecy"],
+            "Bourgogne-Franche-Comte":    ["Dijon", "Besançon", "Chalon-sur-Saône", "Mâcon", "Auxerre"],
+            "Bretagne":                   ["Rennes", "Brest", "Quimper", "Lorient", "Vannes"],
+            "Centre-Val de Loire":        ["Tours", "Orléans", "Bourges", "Blois", "Chartres"],
+            "Grand Est":                  ["Strasbourg", "Reims", "Metz", "Nancy", "Mulhouse"],
+            "Hauts-de-France":            ["Lille", "Amiens", "Roubaix", "Tourcoing", "Dunkirk"],
+            "Normandie":                  ["Rouen", "Caen", "Le Havre", "Cherbourg", "Alençon"],
+            "Nouvelle-Aquitaine":         ["Bordeaux", "Limoges", "Pau", "Bayonne", "La Rochelle"],
+            "Occitanie":                  ["Toulouse", "Montpellier", "Nîmes", "Perpignan", "Narbonne"],
+            "Pays de la Loire":           ["Nantes", "Le Mans", "Angers", "Saint-Nazaire", "Laval"],
+            "Provence-Alpes-Cote d'Azur": ["Marseille", "Nice", "Toulon", "Aix-en-Provence", "Avignon"],
+        },
     },
     "JP": {
-        "states":   ["Tokyo","Osaka","Kyoto","Aichi","Fukuoka","Hokkaido","Kanagawa","Okinawa"],
-        "networks": ["NTT","SoftBank","KDDI","Rakuten Mobile"],
+        "states":   ["Tokyo", "Osaka", "Kyoto", "Aichi", "Fukuoka", "Hokkaido", "Kanagawa", "Okinawa"],
+        "networks": ["NTT", "SoftBank", "KDDI", "Rakuten Mobile"],
+        "cities": {
+            "Tokyo":    ["Shinjuku", "Shibuya", "Chiyoda", "Minato", "Setagaya", "Hachioji"],
+            "Osaka":    ["Osaka", "Sakai", "Higashiosaka", "Hirakata", "Toyonaka"],
+            "Kyoto":    ["Kyoto", "Uji", "Kameoka", "Maizuru", "Fukuchiyama"],
+            "Aichi":    ["Nagoya", "Toyota", "Okazaki", "Ichinomiya", "Toyohashi"],
+            "Fukuoka":  ["Fukuoka", "Kitakyushu", "Kurume", "Omuta", "Iizuka"],
+            "Hokkaido": ["Sapporo", "Asahikawa", "Hakodate", "Kushiro", "Tomakomai"],
+            "Kanagawa": ["Yokohama", "Kawasaki", "Sagamihara", "Fujisawa", "Yokosuka"],
+            "Okinawa":  ["Naha", "Okinawa City", "Uruma", "Ginowan", "Urasoe"],
+        },
     },
     "SG": {
-        "states":   ["Central","North","South","East","West"],
-        "networks": ["Singtel","StarHub","M1","TPG Telecom"],
+        "states":   ["Central", "North", "South", "East", "West"],
+        "networks": ["Singtel", "StarHub", "M1", "TPG Telecom"],
+        "cities": {
+            "Central": ["Orchard", "Marina Bay", "Toa Payoh", "Bishan", "Ang Mo Kio"],
+            "North":   ["Woodlands", "Yishun", "Sembawang", "Canberra"],
+            "South":   ["Buona Vista", "Queenstown", "Telok Blangah", "Harbourfront"],
+            "East":    ["Tampines", "Bedok", "Pasir Ris", "Changi", "Geylang"],
+            "West":    ["Jurong", "Bukit Batok", "Clementi", "Choa Chu Kang", "Boon Lay"],
+        },
     },
     "IN": {
-        "states":   ["MH","DL","KA","TN","UP","WB","GJ","RJ","MP","AP"],
-        "networks": ["Jio","Airtel","Vi","BSNL","MTNL"],
+        "states":   [
+            "Maharashtra", "Delhi", "Karnataka", "Tamil Nadu", "Uttar Pradesh",
+            "West Bengal", "Gujarat", "Rajasthan", "Madhya Pradesh",
+            "Andhra Pradesh",
+        ],
+        "networks": ["Jio", "Airtel", "Vi", "BSNL", "MTNL"],
+        "cities": {
+            "Maharashtra":   ["Mumbai", "Pune", "Nagpur", "Nashik", "Aurangabad", "Thane"],
+            "Delhi":         ["New Delhi", "Delhi", "Noida", "Gurgaon", "Faridabad"],
+            "Karnataka":     ["Bengaluru", "Mysuru", "Mangaluru", "Hubli", "Belagavi"],
+            "Tamil Nadu":    ["Chennai", "Coimbatore", "Madurai", "Tiruchirappalli", "Salem"],
+            "Uttar Pradesh": ["Lucknow", "Kanpur", "Agra", "Varanasi", "Meerut", "Ghaziabad"],
+            "West Bengal":   ["Kolkata", "Howrah", "Durgapur", "Asansol", "Siliguri"],
+            "Gujarat":       ["Ahmedabad", "Surat", "Vadodara", "Rajkot", "Bhavnagar"],
+            "Rajasthan":     ["Jaipur", "Jodhpur", "Udaipur", "Kota", "Ajmer"],
+            "Madhya Pradesh":["Bhopal", "Indore", "Jabalpur", "Gwalior", "Ujjain"],
+            "Andhra Pradesh":["Visakhapatnam", "Vijayawada", "Guntur", "Nellore", "Tirupati"],
+        },
     },
     "BR": {
-        "states":   ["SP","RJ","MG","BA","PR","RS","PE","CE","PA","MA"],
-        "networks": ["Claro","Vivo","TIM","Oi","Nextel"],
+        "states":   [
+            "Sao Paulo", "Rio de Janeiro", "Minas Gerais", "Bahia", "Parana",
+            "Rio Grande do Sul", "Pernambuco", "Ceara", "Para", "Maranhao",
+        ],
+        "networks": ["Claro", "Vivo", "TIM", "Oi", "Nextel"],
+        "cities": {
+            "Sao Paulo":       ["São Paulo", "Guarulhos", "Campinas", "São Bernardo do Campo", "Santo André"],
+            "Rio de Janeiro":  ["Rio de Janeiro", "São Gonçalo", "Duque de Caxias", "Nova Iguaçu", "Niterói"],
+            "Minas Gerais":    ["Belo Horizonte", "Uberlândia", "Contagem", "Juiz de Fora", "Montes Claros"],
+            "Bahia":           ["Salvador", "Feira de Santana", "Vitória da Conquista", "Camaçari", "Itabuna"],
+            "Parana":          ["Curitiba", "Londrina", "Maringá", "Ponta Grossa", "Cascavel"],
+            "Rio Grande do Sul":["Porto Alegre", "Caxias do Sul", "Canoas", "Pelotas", "Santa Maria"],
+            "Pernambuco":      ["Recife", "Caruaru", "Petrolina", "Olinda", "Paulista"],
+            "Ceara":           ["Fortaleza", "Caucaia", "Juazeiro do Norte", "Maracanaú", "Sobral"],
+            "Para":            ["Belém", "Ananindeua", "Santarém", "Marabá", "Castanhal"],
+            "Maranhao":        ["São Luís", "Imperatriz", "São José de Ribamar", "Timon", "Caxias"],
+        },
     },
 }
 
 ALL_NETWORKS = sorted({n for d in COUNTRY_DATA.values() for n in d["networks"]})
-API_BASE     = "http://192.168.1.33:1998/api"
-PROXY_CACHE_FILE = "proxy_cache.json"
-API_BASE_CONFIG_FILE = "api_config.json"
+API_BASE     = "http://192.168.1.29"
+API_SUFFIX = ":1998/api"
+
+# ── Resolve data directory (works both as .py and PyInstaller exe) ──────────
+if getattr(sys, 'frozen', False):
+    _DATA_DIR = os.path.dirname(sys.executable)
+else:
+    _DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+
+APP_DATA_FILE = os.path.join(_DATA_DIR, "app_data.json")
+
+def _load_app_data() -> dict:
+    """Load the unified data file. Returns dict with keys: api_base, proxies."""
+    try:
+        if os.path.exists(APP_DATA_FILE):
+            with open(APP_DATA_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+    except Exception as e:
+        print(f"Error loading app data: {e}")
+    return {}
+
+def _save_app_data(data: dict):
+    """Overwrite the unified data file."""
+    try:
+        with open(APP_DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error saving app data: {e}")
 
 def load_api_base() -> str:
-    """Load saved API base URL from config file."""
-    try:
-        if os.path.exists(API_BASE_CONFIG_FILE):
-            with open(API_BASE_CONFIG_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f).get("api_base", API_BASE)
-    except Exception:
-        pass
-    return API_BASE
+    """Load saved API base URL from unified data file."""
+    url = _load_app_data().get("api_base", f"{API_BASE}{API_SUFFIX}")
+    # Remove /api suffix for display in input field
+    if url.endswith('/api'):
+        url = url[:-4]  # Remove '/api'
+    return url
+
+def get_api_base_for_requests() -> str:
+    """Get the full API base URL for making HTTP requests."""
+    url = _load_app_data().get("api_base", f"{API_BASE}{API_SUFFIX}")
+    # Ensure URL ends with /api for API calls
+    if not url.endswith('/api'):
+        url += '/api'
+    return url
+
+def normalize_api_base_for_requests(url: str) -> str:
+    """Normalize a URL string to ensure it ends with /api for API requests."""
+    if not url:
+        return get_api_base_for_requests()
+    # Ensure URL ends with /api
+    if not url.endswith('/api'):
+        url += '/api'
+    return url
 
 def save_api_base(url: str):
-    """Save API base URL to config file."""
+    """Save API base URL into unified data file (preserves proxies)."""
+    # Ensure URL ends with /api for API calls
+    if not url.endswith('/api'):
+        url += '/api'
+    data = _load_app_data()
+    data["api_base"] = url
+    _save_app_data(data)
+
+def load_proxies_from_file() -> list:
+    """Load proxy list from unified data file."""
     try:
-        with open(API_BASE_CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump({"api_base": url}, f)
+        return list(_load_app_data().get("proxies", []))
     except Exception as e:
-        print(f"Error saving API base: {e}")
+        print(f"Error loading proxies: {e}")
+    return []
+
+def save_proxies_to_file(new_proxies: list):
+    """Append new proxies to unified data file, avoiding duplicates."""
+    try:
+        data = _load_app_data()
+        existing: list = data.get("proxies", [])
+
+        existing_keys = set()
+        for p in existing:
+            ip   = p.get("ip", p.get("host", ""))
+            port = p.get("port", "")
+            if ip:
+                existing_keys.add(f"{ip}:{port}")
+
+        added = 0
+        for p in new_proxies:
+            ip   = p.get("ip", p.get("host", ""))
+            port = p.get("port", "")
+            key  = f"{ip}:{port}"
+            if key not in existing_keys:
+                existing.append(p)
+                existing_keys.add(key)
+                added += 1
+
+        data["proxies"] = existing
+        _save_app_data(data)
+        print(f"[Cache] Saved {added} new proxy(ies). Total: {len(existing)}. File: {APP_DATA_FILE}")
+    except Exception as e:
+        print(f"Error saving proxies: {e}")
+
+def delete_proxy_from_file(ip: str, port: str):
+    """Remove a proxy by ip:port from the unified data file."""
+    try:
+        data = _load_app_data()
+        proxies = data.get("proxies", [])
+        key = f"{ip}:{port}"
+        data["proxies"] = [
+            p for p in proxies
+            if f"{p.get('ip', p.get('host', ''))}:{p.get('port', '')}" != key
+        ]
+        _save_app_data(data)
+    except Exception as e:
+        print(f"Error deleting proxy: {e}")
 
 # ─── Country Flags ─────────────────────────────────────────────────────────────
 def draw_country_flag(painter, country_code, rect):
@@ -166,23 +449,6 @@ def draw_country_flag(painter, country_code, rect):
         painter.drawText(flag_rect, Qt.AlignmentFlag.AlignCenter, "?")
 
     # painter.restore()
-def save_proxies_to_file(proxies):
-    """Save proxy list to local JSON file."""
-    try:
-        with open(PROXY_CACHE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(proxies, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        print(f"Error saving proxies: {e}")
-
-def load_proxies_from_file():
-    """Load proxy list from local JSON file."""
-    try:
-        if os.path.exists(PROXY_CACHE_FILE):
-            with open(PROXY_CACHE_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"Error loading proxies: {e}")
-    return []
 
 # ─── Palette ───────────────────────────────────────────────────────────────────
 C = {
@@ -309,70 +575,114 @@ QPushButton#clearBtn {{
 }}
 QPushButton#clearBtn:hover  {{ background: {C['border']}; color: {C['text']}; }}
 QPushButton#clearBtn:pressed {{ background: #252840; }}
-/* Proxy row */
-QWidget#proxyRow {{
+QPushButton#autoCheckBtn {{
+    background: {C['card']};
+    color: {C['label']};
+    border: 1.5px solid {C['border']};
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 10pt;
+    font-weight: 700;
+}}
+QPushButton#autoCheckBtn:hover  {{ background: {C['border']}; color: {C['text']}; }}
+QPushButton#autoCheckBtn:pressed {{ background: #252840; }}
+QPushButton#autoCheckBtn:checked {{
+    background: {C['accent']};
+    color: #fff;
+    border-color: {C['accent']};
+}}
+/* ── Proxy card ── */
+QWidget#proxyCard {{
     background: {C['card']};
     border: 1px solid {C['border']};
-    border-radius: 8px;
+    border-radius: 10px;
 }}
-QWidget#proxyRow:hover {{
+QWidget#proxyCard:hover {{
     border-color: {C['border_focus']};
 }}
-QLabel#proxyText {{
+QLabel#proxyIp {{
     color: {C['text']};
     font-family: "Consolas", monospace;
-    font-size: 10pt;
-    background: transparent;
-    padding: 0px 4px;
-}}
-/* Check button */
-QPushButton#checkBtn {{
-    background: transparent;
-    color: {C['accent2']};
-    border: 1.5px solid {C['border']};
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 8pt;
+    font-size: 11pt;
     font-weight: 700;
-    min-width: 60px;
-}}
-QPushButton#checkBtn:hover   {{ background: {C['accent']}; color: #fff; border-color: {C['accent']}; }}
-QPushButton#checkBtn:pressed  {{ background: #5a52e0; color: #fff; }}
-QPushButton#checkBtn:disabled {{ color: {C['subtext']}; border-color: {C['border']}; }}
-/* Copy button */
-QPushButton#copyBtn {{
     background: transparent;
+}}
+QLabel#proxyInfo {{
     color: {C['subtext']};
-    border: 1.5px solid {C['border']};
-    border-radius: 6px;
-    padding: 4px 10px;
+    font-size: 8pt;
+    background: transparent;
+}}
+QLabel#tagLabel {{
+    color: {C['accent2']};
+    font-size: 7pt;
+    background: transparent;
+}}
+QLabel#statusUnknown {{
+    color: {C['subtext']};
     font-size: 8pt;
     font-weight: 700;
-    min-width: 54px;
+    background: transparent;
+    padding: 0 2px;
 }}
-QPushButton#copyBtn:hover   {{ background: {C['panel']}; color: {C['text']}; }}
-QPushButton#copyBtn:pressed  {{ background: {C['border']}; }}
-/* Status labels */
 QLabel#statusAlive {{
     color: {C['success']};
     font-size: 8pt;
     font-weight: 700;
     background: transparent;
-    padding: 0px 4px;
+    padding: 0 2px;
 }}
 QLabel#statusDead {{
     color: {C['error']};
     font-size: 8pt;
     font-weight: 700;
     background: transparent;
-    padding: 0px 4px;
+    padding: 0 2px;
 }}
 QLabel#statusChecking {{
     color: {C['subtext']};
     font-size: 8pt;
     background: transparent;
-    padding: 0px 4px;
+    padding: 0 2px;
 }}
+/* Card action buttons */
+QPushButton#cardRefreshBtn {{
+    background: transparent;
+    color: {C['subtext']};
+    border: 1.5px solid {C['border']};
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 8pt;
+    font-weight: 700;
+    min-width: 68px;
+}}
+QPushButton#cardRefreshBtn:hover   {{ background: {C['accent']}; color: #fff; border-color: {C['accent']}; }}
+QPushButton#cardRefreshBtn:pressed  {{ background: #5a52e0; color: #fff; }}
+QPushButton#cardRefreshBtn:disabled {{ color: {C['subtext']}; border-color: {C['border']}; opacity: 0.5; }}
+QPushButton#cardCheckBtn {{
+    background: transparent;
+    color: {C['accent2']};
+    border: 1.5px solid {C['border']};
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 8pt;
+    font-weight: 700;
+    min-width: 68px;
+}}
+QPushButton#cardCheckBtn:hover   {{ background: {C['accent']}; color: #fff; border-color: {C['accent']}; }}
+QPushButton#cardCheckBtn:pressed  {{ background: #5a52e0; color: #fff; }}
+QPushButton#cardCheckBtn:disabled {{ color: {C['subtext']}; border-color: {C['border']}; }}
+QPushButton#cardDeleteBtn {{
+    background: transparent;
+    color: {C['error']};
+    border: 1.5px solid {C['border']};
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 8pt;
+    font-weight: 700;
+    min-width: 68px;
+}}
+QPushButton#cardDeleteBtn:hover   {{ background: {C['error']}; color: #fff; border-color: {C['error']}; }}
+QPushButton#cardDeleteBtn:pressed  {{ background: #d05555; color: #fff; }}
 /* Result scroll area */
 QScrollArea#resultScroll {{
     background: {C['entry_bg']};
@@ -381,16 +691,6 @@ QScrollArea#resultScroll {{
 }}
 QScrollArea#resultScroll > QWidget > QWidget {{
     background: {C['entry_bg']};
-}}
-QTextEdit#result {{
-    background: {C['entry_bg']};
-    color: {C['text']};
-    border: 1px solid {C['border']};
-    border-radius: 10px;
-    font-family: "Consolas", monospace;
-    font-size: 10pt;
-    padding: 10px 14px;
-    selection-background-color: {C['accent']};
 }}
 QScrollBar:vertical {{
     background: {C['entry_bg']};
@@ -462,6 +762,293 @@ class ProxyCheckWorker(QObject):
             self.result.emit(resp.status_code == 200)
         except Exception:
             self.result.emit(False)
+
+
+# ─── Refresh worker (re-fetch one proxy slot by its original params) ───────────
+class RefreshWorker(QObject):
+    finished = Signal(object)   # requests.Response
+    error    = Signal(str)
+
+    def __init__(self, params: dict, api_base: str):
+        super().__init__()
+        self._params   = params
+        self._api_base = api_base
+
+    def run(self):
+        try:
+            resp = requests.get(self._api_base, params=self._params, timeout=15)
+            self.finished.emit(resp)
+        except requests.exceptions.ConnectionError:
+            self.error.emit("Connection refused – check API server.")
+        except requests.exceptions.Timeout:
+            self.error.emit("Request timed out.")
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
+# ─── Proxy Card widget ─────────────────────────────────────────────────────────
+class ProxyCard(QWidget):
+    """A rich card widget representing one cached proxy entry."""
+
+    deleted   = Signal(object)   # emits self when user deletes
+    refreshed = Signal(object, dict)  # emits (self, new_proxy_dict) after refresh
+
+    def __init__(self, proxy_dict: dict, api_base_fn, parent=None):
+        super().__init__(parent)
+        self.setObjectName("proxyCard")
+        self._proxy_dict  = dict(proxy_dict)
+        self._api_base_fn = api_base_fn   # callable → current api base url
+        self._refresh_thread = None
+        self._refresh_worker = None
+        self._check_thread   = None
+        self._check_worker   = None
+        self._auto_check_triggered = False
+        self._build()
+
+    # ── accessors ──
+    @property
+    def proxy_dict(self) -> dict:
+        return self._proxy_dict
+
+    def _ip_port(self) -> tuple:
+        ip   = self._proxy_dict.get("ip",   self._proxy_dict.get("host", ""))
+        port = self._proxy_dict.get("port", "")
+        return ip, str(port)
+
+    def _build(self):
+        ip, port = self._ip_port()
+        proxy_str = f"{ip}:{port}" if ip else "unknown"
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(14, 10, 14, 10)
+        outer.setSpacing(3)
+
+        # ── Row 1: ip:port  +  status badge  +  action buttons ──
+        row1 = QHBoxLayout()
+        row1.setSpacing(8)
+
+        self._ip_lbl = QLabel(proxy_str)
+        self._ip_lbl.setObjectName("proxyIp")
+        self._ip_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        row1.addWidget(self._ip_lbl, 1)
+
+        self._status_lbl = QLabel("● Unknown")
+        self._status_lbl.setObjectName("statusUnknown")
+        row1.addWidget(self._status_lbl)
+
+        self._refresh_btn = QPushButton("↻  Refresh")
+        self._refresh_btn.setObjectName("cardRefreshBtn")
+        self._refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._refresh_btn.setFixedHeight(28)
+
+        self._check_btn = QPushButton("⚡ Check")
+        self._check_btn.setObjectName("cardCheckBtn")
+        self._check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._check_btn.setFixedHeight(28)
+
+        self._delete_btn = QPushButton("✕  Delete")
+        self._delete_btn.setObjectName("cardDeleteBtn")
+        self._delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._delete_btn.setFixedHeight(28)
+
+        row1.addWidget(self._refresh_btn)
+        row1.addWidget(self._check_btn)
+        row1.addWidget(self._delete_btn)
+        outer.addLayout(row1)
+
+        # ── Row 2: info tags ──
+        row2 = QHBoxLayout()
+        row2.setSpacing(6)
+        row2.setContentsMargins(0, 0, 0, 0)
+
+        meta_fields = [
+            ("country", "🌍"),
+            ("state",   "📍"),
+            ("isp",     "📡"),
+        ]
+        has_tag = False
+        for key, icon in meta_fields:
+            val = self._proxy_dict.get(key, "")
+            if val and str(val).strip():
+                tag = QLabel(f"{icon} {val}")
+                tag.setObjectName("tagLabel")
+                row2.addWidget(tag)
+                has_tag = True
+
+        if not has_tag:
+            # Fallback: show all non-empty fields
+            for k, v in self._proxy_dict.items():
+                if k in ("ip", "host") or not v:
+                    continue
+                tag = QLabel(f"{k}: {v}")
+                tag.setObjectName("tagLabel")
+                row2.addWidget(tag)
+
+        row2.addStretch()
+        outer.addLayout(row2)
+
+        # ── Wire signals ──
+        self._check_btn.clicked.connect(self._do_check)
+        self._refresh_btn.clicked.connect(self._do_refresh)
+        self._delete_btn.clicked.connect(self._do_delete)
+
+    def update_button_visibility(self, auto_check_enabled: bool):
+        """Update visibility of check and refresh buttons based on auto-check state."""
+        # Hide check and refresh buttons when auto-check is enabled
+        self._check_btn.setVisible(not auto_check_enabled)
+        self._refresh_btn.setVisible(not auto_check_enabled)
+
+    # ── Delete ──
+    def _do_delete(self):
+        ip, port = self._ip_port()
+        delete_proxy_from_file(ip, port)
+        self.deleted.emit(self)
+
+    # ── Check ──
+    def _do_check(self):
+        ip, port = self._ip_port()
+        if not ip:
+            return
+        proxy_str = f"{ip}:{port}"
+        self._check_btn.setEnabled(False)
+        self._status_lbl.setObjectName("statusChecking")
+        self._status_lbl.setText("… checking")
+        self._status_lbl.setStyleSheet("")   # force re-read from QSS
+
+        self._check_thread = QThread()
+        self._check_worker = ProxyCheckWorker(proxy_str)
+        self._check_worker.moveToThread(self._check_thread)
+        self._check_thread.started.connect(self._check_worker.run)
+        self._check_worker.result.connect(self._on_check_result)
+        self._check_worker.result.connect(self._check_thread.quit)
+        self._check_thread.start()
+
+    def _on_check_result(self, alive: bool):
+        self._check_btn.setEnabled(True)
+        if alive:
+            self._status_lbl.setObjectName("statusAlive")
+            self._status_lbl.setText("● Alive")
+            self._auto_check_triggered = False  # Reset flag
+        else:
+            self._status_lbl.setObjectName("statusDead")
+            self._status_lbl.setText("✕ Dead")
+            # Auto-refresh if this check was triggered automatically
+            if self._auto_check_triggered:
+                self._auto_check_triggered = False  # Reset flag
+                # Small delay before auto-refresh to avoid overwhelming the API
+                QTimer.singleShot(1000, self._do_refresh)
+        # Force QSS re-evaluation after objectName change
+        self._status_lbl.style().unpolish(self._status_lbl)
+        self._status_lbl.style().polish(self._status_lbl)
+
+    # ── Refresh ──
+    def _do_refresh(self):
+        # Build API params from metadata stored in proxy_dict
+        port = self._proxy_dict.get("port", "")
+
+        params = {
+            "country": self._proxy_dict.get("country", ""),
+            "state":   self._proxy_dict.get("state",   ""),
+            "city":    self._proxy_dict.get("_city",   ""),
+            "postal":  self._proxy_dict.get("postal",  ""),
+            "isp":     self._proxy_dict.get("isp",     ""),
+            "start":   str(port) if port else "40000",
+            "num":     "1",
+            "ip":      "",
+        }
+
+        self._refresh_btn.setEnabled(False)
+        self._status_lbl.setObjectName("statusChecking")
+        self._status_lbl.setText("… fetching")
+        self._status_lbl.style().unpolish(self._status_lbl)
+        self._status_lbl.style().polish(self._status_lbl)
+
+        self._refresh_thread = QThread()
+        self._refresh_worker = RefreshWorker(params, self._api_base_fn())
+        self._refresh_worker.moveToThread(self._refresh_thread)
+        self._refresh_thread.started.connect(self._refresh_worker.run)
+        self._refresh_worker.finished.connect(self._on_refresh_done)
+        self._refresh_worker.error.connect(self._on_refresh_error)
+        self._refresh_worker.finished.connect(self._refresh_thread.quit)
+        self._refresh_worker.error.connect(self._refresh_thread.quit)
+        self._refresh_thread.start()
+
+    def _on_refresh_done(self, resp):
+        self._refresh_btn.setEnabled(True)
+        if resp.status_code != 200:
+            self._status_lbl.setObjectName("statusDead")
+            self._status_lbl.setText(f"✕ HTTP {resp.status_code}")
+            self._status_lbl.style().unpolish(self._status_lbl)
+            self._status_lbl.style().polish(self._status_lbl)
+            return
+
+        content_type = resp.headers.get('content-type', '').lower()
+        try:
+            text = resp.text.strip()
+            data = None
+
+            # Try JSON parse first
+            if 'json' in content_type:
+                try:
+                    data = resp.json()
+                    if isinstance(data, str):
+                        ip, port = data.split(':', 1) if ':' in data else (data, '')
+                        data = {"ip": ip, "port": port}
+                except Exception:
+                    data = None  # fallback to plain text
+
+            # Plain text / JSON parse failed → try "ip:port" format
+            if data is None:
+                if ':' in text:
+                    ip, port = text.split(':', 1)
+                    data = {"ip": ip.strip(), "port": port.strip()}
+                else:
+                    self._status_lbl.setObjectName("statusDead")
+                    self._status_lbl.setText("✕ Bad format")
+                    self._status_lbl.style().unpolish(self._status_lbl)
+                    self._status_lbl.style().polish(self._status_lbl)
+                    return
+        except Exception as e:
+            print(f"[DEBUG] Refresh parse error: {e}")
+            print(f"[DEBUG] Refresh response text: {resp.text[:500]}...")
+            self._status_lbl.setObjectName("statusDead")
+            self._status_lbl.setText("✕ Bad JSON")
+            self._status_lbl.style().unpolish(self._status_lbl)
+            self._status_lbl.style().polish(self._status_lbl)
+            return
+
+        # Extract first proxy from response
+        new_proxy: dict | None = None
+        if isinstance(data, list) and data:
+            new_proxy = data[0] if isinstance(data[0], dict) else None
+        elif isinstance(data, dict):
+            new_proxy = data
+
+        if not new_proxy:
+            self._status_lbl.setObjectName("statusDead")
+            self._status_lbl.setText("✕ No result")
+            self._status_lbl.style().unpolish(self._status_lbl)
+            self._status_lbl.style().polish(self._status_lbl)
+            return
+
+        # Preserve metadata from old entry
+        for meta_key in ("country", "state", "city", "postal", "isp", "_city"):
+            if meta_key not in new_proxy and meta_key in self._proxy_dict:
+                new_proxy[meta_key] = self._proxy_dict[meta_key]
+
+        # Delete old proxy from cache, save new one
+        old_ip, old_port = self._ip_port()
+        delete_proxy_from_file(old_ip, old_port)
+        save_proxies_to_file([new_proxy])
+
+        self.refreshed.emit(self, new_proxy)
+
+    def _on_refresh_error(self, msg: str):
+        self._refresh_btn.setEnabled(True)
+        self._status_lbl.setObjectName("statusDead")
+        self._status_lbl.setText("✕ Error")
+        self._status_lbl.style().unpolish(self._status_lbl)
+        self._status_lbl.style().polish(self._status_lbl)
 
 
 # ─── Autocomplete ComboBox ──────────────────────────────────────────────────────
@@ -651,6 +1238,12 @@ class ProxyApp(QMainWindow):
         self.setWindowTitle("Proxy Fetcher")
         self.setFixedSize(860, 720)
         self._status_sig.connect(self._apply_status)
+        self._auto_check_enabled = False
+        self._auto_check_timer = QTimer()
+        self._auto_check_timer.timeout.connect(self._auto_check_all_proxies)
+        self._countdown_timer = QTimer()
+        self._countdown_timer.timeout.connect(self._update_countdown)
+        self._countdown_remaining = 30
         self._build_ui()
         self._center()
         self._set_defaults()
@@ -663,10 +1256,11 @@ class ProxyApp(QMainWindow):
         )
 
     def _set_defaults(self):
-        # Set default values: Area Code = US, State = FL, Network = ATT
+        # Set default values: Area Code = US, State = Florida, Network = ATT
         self._area_cb.setCurrentText("US")
         self._on_country_change("US")  # Manually trigger to populate state dropdown
-        self._state_cb.setCurrentText("FL")
+        self._state_cb.setCurrentText("Florida")
+        self._on_state_change("Florida")  # Manually trigger to populate city dropdown
         self._network_cb.setCurrentText("ATT")
         self._port_edit.setText("2000")
 
@@ -708,13 +1302,15 @@ class ProxyApp(QMainWindow):
         api_lbl.setStyleSheet(f"color: {C['label']}; font-size: 9pt; font-weight: 700; background: transparent;")
         api_lbl.setFixedWidth(72)
         self._api_edit = QLineEdit(load_api_base())
-        self._api_edit.setPlaceholderText("http://host:port/api")
+        self._api_edit.setPlaceholderText("http://host:port")
         self._api_edit.setFixedHeight(34)
         self._api_save_btn = QPushButton("Save")
         self._api_save_btn.setObjectName("clearBtn")
         self._api_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._api_save_btn.setFixedSize(70, 36)
-        self._api_save_btn.clicked.connect(self._save_api_base)
+        self._api_save_btn.clicked.connect(self._save_api_base_manual)
+        self._api_edit.returnPressed.connect(self._save_api_base)
+        self._api_edit.editingFinished.connect(self._save_api_base)
         api_bar.addWidget(api_lbl)
         api_bar.addWidget(self._api_edit, 1)
         api_bar.addWidget(self._api_save_btn)
@@ -750,6 +1346,7 @@ class ProxyApp(QMainWindow):
 
         self._state_cb = AutoComboBox()
         self._state_cb.setPlaceholderText("Any")
+        self._state_cb.currentTextChanged.connect(self._on_state_change)
         g1.addWidget(self._state_cb, 2, 1)
 
         self._network_cb = AutoComboBox()
@@ -773,7 +1370,7 @@ class ProxyApp(QMainWindow):
         g2.addWidget(sec2, 0, 0, 1, 3)
         self._fld_lbl(g2, "PORT",              0, 1)
         self._fld_lbl(g2, "NUMBER OF RESULTS", 1, 1)
-        self._fld_lbl(g2, "START OFFSET",      2, 1)
+        self._fld_lbl(g2, "CITY",      2, 1)
 
         self._port_edit = QLineEdit()
         self._port_edit.setPlaceholderText("e.g. 2000")
@@ -782,8 +1379,9 @@ class ProxyApp(QMainWindow):
         self._number_edit = QLineEdit("1")
         g2.addWidget(self._number_edit, 2, 1)
 
-        self._start_edit = QLineEdit("40000")
-        g2.addWidget(self._start_edit, 2, 2)
+        self._city_cb = AutoComboBox()
+        self._city_cb.setPlaceholderText("Any")
+        g2.addWidget(self._city_cb, 2, 2)
 
         card_v.addLayout(g2)
         main.addWidget(card)
@@ -798,33 +1396,47 @@ class ProxyApp(QMainWindow):
         self._fetch_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._fetch_btn.clicked.connect(self._fetch)
 
-        self._clear_btn = QPushButton("  ✕  Clear")
-        self._clear_btn.setObjectName("clearBtn")
-        self._clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._clear_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._clear_btn.clicked.connect(self._clear_result)
+        self._clear_cache_btn = QPushButton("  🗑  Clear Cache")
+        self._clear_cache_btn.setObjectName("clearBtn")
+        self._clear_cache_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._clear_cache_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._clear_cache_btn.clicked.connect(self._clear_cache)
 
-        self._status_lbl = QLabel("")
-        self._status_lbl.setStyleSheet(
-            f"color: {C['subtext']}; font-size: 9pt; background: transparent;")
+        self._auto_check_btn = QPushButton("  ⏰  Auto Check: OFF")
+        self._auto_check_btn.setObjectName("autoCheckBtn")
+        self._auto_check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._auto_check_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._auto_check_btn.clicked.connect(self._toggle_auto_check)
 
-        act.addWidget(self._fetch_btn, 1)
-        act.addWidget(self._clear_btn, 1)
+        act.addWidget(self._fetch_btn, 2)
+        act.addWidget(self._clear_cache_btn, 1)
+        act.addWidget(self._auto_check_btn, 1)
         main.addLayout(act)
         main.addSpacing(6)
 
-        self._status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main.addWidget(self._status_lbl)
-        main.addSpacing(10)
-
         # ── Result section ────────────────────────────────────────────────────
-        res_hdr = QLabel("RESULT")
+        res_bar = QHBoxLayout()
+        res_hdr = QLabel("PROXIES")
         res_hdr.setStyleSheet(
             f"color: {C['subtext']}; font-size: 8pt; font-weight: 700; background: transparent;")
-        main.addWidget(res_hdr)
+        self._res_count_lbl = QLabel("0 proxies")
+        self._res_count_lbl.setStyleSheet(
+            f"color: {C['accent2']}; font-size: 8pt; font-weight: 700; background: transparent;")
+
+        self._status_lbl = QLabel("")
+        self._status_lbl.setStyleSheet(
+            f"color: {C['subtext']}; font-size: 8pt; background: transparent;")
+
+        res_bar.addWidget(res_hdr)
+        res_bar.addSpacing(8)
+        res_bar.addWidget(self._res_count_lbl)
+        res_bar.addSpacing(16)
+        res_bar.addWidget(self._status_lbl)
+        res_bar.addStretch()
+        main.addLayout(res_bar)
         main.addSpacing(4)
 
-        # Scroll area containing a VBox of proxy rows
+        # Scroll area containing a VBox of proxy cards
         self._scroll = QScrollArea()
         self._scroll.setObjectName("resultScroll")
         self._scroll.setWidgetResizable(True)
@@ -834,7 +1446,7 @@ class ProxyApp(QMainWindow):
         self._result_container.setStyleSheet(f"background: {C['entry_bg']};")
         self._result_layout = QVBoxLayout(self._result_container)
         self._result_layout.setContentsMargins(10, 10, 10, 10)
-        self._result_layout.setSpacing(6)
+        self._result_layout.setSpacing(8)
         self._result_layout.addStretch()
 
         self._scroll.setWidget(self._result_container)
@@ -859,15 +1471,39 @@ class ProxyApp(QMainWindow):
         networks = data.get("networks", ALL_NETWORKS)
         self._state_cb.set_items(states)
         self._network_cb.set_items(networks)
+        # Reset city when country changes
+        self._city_cb.set_items([])
+
+    def _on_state_change(self, text: str):
+        country  = self._area_cb.current_value().strip().upper()
+        data     = COUNTRY_DATA.get(country, {})
+        cities_map = data.get("cities", {})
+        cities   = cities_map.get(text.strip(), [])
+        self._city_cb.set_items(cities)
 
     # ── API Base ─────────────────────────────────────────────────────────────
-    def _save_api_base(self):
+    def _save_api_base(self, show_status: bool = False):
+        url = self._api_edit.text().strip()
+        if not url:
+            return
+        save_api_base(url)
+        if show_status:
+            self._set_status("✓  API URL saved", C['success'])
+
+    def _save_api_base_manual(self):
         url = self._api_edit.text().strip()
         if not url:
             QMessageBox.warning(self, "Invalid URL", "API URL cannot be empty.")
             return
+        # Basic URL validation
+        if not url.startswith(('http://', 'https://')):
+            QMessageBox.warning(self, "Invalid URL", "API URL must start with http:// or https://")
+            return
+        if '://' not in url or url.count('://') != 1:
+            QMessageBox.warning(self, "Invalid URL", "Invalid URL format.")
+            return
         save_api_base(url)
-        self._set_status(f"✓  API URL saved", C['success'])
+        self._set_status("✓  API URL saved", C['success'])
 
     # ── Fetch ────────────────────────────────────────────────────────────────
     def _fetch(self):
@@ -877,25 +1513,28 @@ class ProxyApp(QMainWindow):
                                 "Please enter an Area Code (country).")
             return
 
+        port = self._port_edit.text().strip()
+
         params = {
             "country": country,
             "state":   self._state_cb.current_value(),
-            "city":    "",
+            "city":    self._city_cb.current_value() or "",
             "postal":  "",
             "isp":     self._network_cb.current_value(),
-            "start":   self._start_edit.text().strip() or "40000",
+            "start":   port or "2000",
             "num":     self._number_edit.text().strip() or "1",
             "ip":      "",
         }
-        port = self._port_edit.text().strip()
-        if port:
-            params["port"] = port
+
+        # Stash form params so they can be embedded into the saved proxy dict
+        self._last_fetch_params = params
 
         self._set_status("⏳  Fetching…", C['subtext'])
         self._fetch_btn.setEnabled(False)
 
         self._thread = QThread()
-        self._worker = FetchWorker(params, self._api_edit.text().strip() or load_api_base())
+        api_base = self._api_edit.text().strip() or load_api_base()
+        self._worker = FetchWorker(params, normalize_api_base_for_requests(api_base))
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.finished.connect(self._handle_response)
@@ -907,75 +1546,103 @@ class ProxyApp(QMainWindow):
     def _handle_response(self, resp):
         self._fetch_btn.setEnabled(True)
         code = resp.status_code
+        content_type = resp.headers.get('content-type', '').lower()
+
         if code == 200:
             self._set_status(f"✓  {code} OK", C['success'])
             try:
-                self._render_json(resp.json(), resp.url)
-            except Exception:
-                self._add_info_row(resp.text)
+                text = resp.text.strip()
+                data = None
+
+                # Try JSON parse first
+                if 'json' in content_type:
+                    try:
+                        data = resp.json()
+                        if isinstance(data, str):
+                            # JSON string containing "ip:port"
+                            ip, port = data.split(':', 1) if ':' in data else (data, '')
+                            data = [{"ip": ip, "port": port}]
+                    except Exception:
+                        data = None  # fallback to plain text
+
+                # Plain text / JSON parse failed → try "ip:port" format
+                if data is None:
+                    if ':' in text:
+                        # Could be multiple lines of ip:port
+                        proxies = []
+                        for line in text.splitlines():
+                            line = line.strip()
+                            if ':' in line:
+                                ip, port = line.split(':', 1)
+                                proxies.append({"ip": ip.strip(), "port": port.strip()})
+                        data = proxies if proxies else None
+
+                if data is None:
+                    self._add_info_row(f"Unexpected response: {text[:200]}")
+                    self._set_status("⚠  Unexpected format", C['subtext'])
+                    return
+
+                self._render_json(data, resp.url)
+            except Exception as e:
+                print(f"[DEBUG] Parse error: {e}")
+                print(f"[DEBUG] Response text: {resp.text[:500]}...")
+                self._add_info_row(f"Parse error: {str(e)[:100]}...")
+                self._set_status("✗  Parse error", C['error'])
         else:
+            print(f"[DEBUG] HTTP {code} error: {resp.text[:500]}...")
+            self._add_info_row(f"HTTP {code}: {resp.text[:200]}...", is_error=True)
             self._set_status(f"✗  HTTP {code}", C['error'])
-            self._add_info_row(f"HTTP {code}\n{resp.text}", is_error=True)
 
     def _show_error(self, msg: str):
         self._fetch_btn.setEnabled(True)
-        self._set_status("✗  Error", C['error'])
-        self._add_info_row(f"Error: {msg}", is_error=True)
+        self._set_status(f"✗  {msg}", C['error'])
 
     # ── Result rendering ─────────────────────────────────────────────────────
     def _clear_rows(self):
-        """Remove all widgets from the result layout (keep trailing stretch)."""
+        """Remove all proxy cards from the result layout (keep trailing stretch)."""
         while self._result_layout.count() > 1:
             item = self._result_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-
-        # Force layout update
         self._result_container.update()
 
-    def _render_json(self, data, url: str, save_proxies=True):
-        self._clear_rows()
-        # URL info row
-        self._add_info_row(f"URL: {url}")
-
+    def _render_json(self, data, url: str):
         proxies_to_save = []
+        params = getattr(self, "_last_fetch_params", {})
+
         if isinstance(data, list):
-            self._add_info_row(f"Found {len(data)} result(s)", color=C['success'])
             for item in data:
                 if isinstance(item, dict):
-                    self._add_proxy_row(item)
                     proxies_to_save.append(item)
-                else:
-                    self._add_info_row(str(item))
         elif isinstance(data, dict):
-            self._add_proxy_row(data)
             proxies_to_save.append(data)
-        else:
-            self._add_info_row(str(data))
 
-        # Save proxies to file if requested
-        if save_proxies and proxies_to_save:
-            save_proxies_to_file(proxies_to_save)
+        if not proxies_to_save:
+            self._set_status("⚠  No proxy in response", C['subtext'])
+            return
+
+        # Embed form params as metadata into each proxy dict before saving
+        for p in proxies_to_save:
+            p.setdefault("country", params.get("country", ""))
+            p.setdefault("state",   params.get("state",   ""))
+            p.setdefault("city",    params.get("city",    ""))
+            p.setdefault("isp",     params.get("isp",     ""))
+            p["_city"] = params.get("city", "")
+
+        save_proxies_to_file(proxies_to_save)
+        # Reload full list so UI is consistent with cache
+        self._load_cached_proxies()
+        self._set_status(f"✓  Added {len(proxies_to_save)} proxy(ies)", C['success'])
 
     def _load_cached_proxies(self):
-        """Load and display cached proxies on startup."""
-        cached_proxies = load_proxies_from_file()
-        if cached_proxies:
-            self._clear_rows()
-            self._add_info_row("Loaded cached proxies", color=C['subtext'])
-            self._add_info_row(f"Found {len(cached_proxies)} cached result(s)", color=C['success'])
-            for proxy in cached_proxies:
-                self._add_proxy_row(proxy)
-
-    def _proxy_str(self, d: dict) -> str:
-        """Build a display string from a proxy dict."""
-        ip   = d.get("ip",   d.get("host", ""))
-        port = d.get("port", "")
-        if ip and port:
-            return f"{ip}:{port}"
-        # fallback: show all key=value pairs
-        parts = [f"{k}: {v}" for k, v in d.items() if v not in ("", None)]
-        return "  |  ".join(parts)
+        """Load and display cached proxies."""
+        cached = load_proxies_from_file()
+        self._clear_rows()
+        if cached:
+            for proxy in cached:
+                self._add_proxy_card(proxy)
+        # Update result header count
+        self._res_count_lbl.setText(f"{len(cached)} proxies")
 
     def _add_info_row(self, text: str, color: str = None, is_error: bool = False):
         lbl = QLabel(text)
@@ -985,98 +1652,136 @@ class ProxyApp(QMainWindow):
         lbl.setStyleSheet(f"color: {c}; font-size: 9pt; background: transparent; padding: 4px 8px;")
         self._result_layout.insertWidget(self._result_layout.count() - 1, lbl)
 
-    def _add_proxy_row(self, proxy_dict: dict):
-        row = QWidget()
-        row.setObjectName("proxyRow")
-        row.setFixedHeight(44)
+    def _add_proxy_card(self, proxy_dict: dict):
+        card = ProxyCard(proxy_dict, lambda: normalize_api_base_for_requests(self._api_edit.text().strip() or load_api_base()))
+        card.deleted.connect(self._on_card_deleted)
+        card.refreshed.connect(self._on_card_refreshed)
+        card.update_button_visibility(self._auto_check_enabled)  # Set initial visibility
+        self._result_layout.insertWidget(self._result_layout.count() - 1, card)
 
-        hl = QHBoxLayout(row)
-        hl.setContentsMargins(12, 0, 8, 0)
-        hl.setSpacing(8)
+    def _on_card_deleted(self, card: ProxyCard):
+        self._result_layout.removeWidget(card)
+        card.deleteLater()
+        # Update count
+        count = self._result_layout.count() - 1  # exclude stretch
+        self._res_count_lbl.setText(f"{count} proxies")
 
-        # Proxy text
-        proxy_str = self._proxy_str(proxy_dict)
-        txt = QLabel(proxy_str)
-        txt.setObjectName("proxyText")
-        txt.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        hl.addWidget(txt, 1)
+    def _on_card_refreshed(self, old_card: ProxyCard, new_proxy: dict):
+        """Replace old card in-place with a new one after refresh."""
+        idx = self._result_layout.indexOf(old_card)
+        self._result_layout.removeWidget(old_card)
+        old_card.deleteLater()
 
-        # Status label (empty until checked)
-        status_lbl = QLabel("")
-        status_lbl.setObjectName("statusChecking")
-        status_lbl.setFixedWidth(80)
-        status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hl.addWidget(status_lbl)
-
-        # Check button
-        check_btn = QPushButton("⚡ Check")
-        check_btn.setObjectName("checkBtn")
-        check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        check_btn.setFixedHeight(30)
-        hl.addWidget(check_btn)
-
-        # Copy button
-        copy_btn = QPushButton("📋 Copy")
-        copy_btn.setObjectName("copyBtn")
-        copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        copy_btn.setFixedHeight(30)
-        hl.addWidget(copy_btn)
-
-        # Wire up
-        check_btn.clicked.connect(
-            lambda _, s=status_lbl, b=check_btn, p=proxy_str: self._check_proxy(p, s, b))
-        copy_btn.clicked.connect(
-            lambda _, p=proxy_str: QApplication.clipboard().setText(p))
-
-        self._result_layout.insertWidget(self._result_layout.count() - 1, row)
-
-    # ── Proxy check ──────────────────────────────────────────────────────────
-    def _check_proxy(self, proxy_str: str, status_lbl: QLabel, btn: QPushButton):
-        btn.setEnabled(False)
-        status_lbl.setObjectName("statusChecking")
-        status_lbl.setText("…checking")
-        status_lbl.setStyleSheet(f"color: {C['subtext']}; font-size: 8pt; background: transparent; padding: 0 4px;")
-
-        self._check_thread = QThread()
-        self._check_worker = ProxyCheckWorker(proxy_str)
-        self._check_worker.moveToThread(self._check_thread)
-        self._check_thread.started.connect(self._check_worker.run)
-        self._check_worker.result.connect(
-            lambda alive, s=status_lbl, b=btn: self._on_check_result(alive, s, b))
-        self._check_worker.result.connect(self._check_thread.quit)
-        self._check_thread.start()
-
-    def _on_check_result(self, alive: bool, status_lbl: QLabel, btn: QPushButton):
-        btn.setEnabled(True)
-        if alive:
-            status_lbl.setText("● Alive")
-            status_lbl.setStyleSheet(
-                f"color: {C['success']}; font-size: 8pt; font-weight: 700; background: transparent; padding: 0 4px;")
-        else:
-            status_lbl.setText("✕ Dead")
-            status_lbl.setStyleSheet(
-                f"color: {C['error']}; font-size: 8pt; font-weight: 700; background: transparent; padding: 0 4px;")
+        new_card = ProxyCard(new_proxy, lambda: normalize_api_base_for_requests(self._api_edit.text().strip() or load_api_base()))
+        new_card.deleted.connect(self._on_card_deleted)
+        new_card.refreshed.connect(self._on_card_refreshed)
+        new_card.update_button_visibility(self._auto_check_enabled)  # Set visibility for new card
+        self._result_layout.insertWidget(idx, new_card)
 
     # ── Status (thread-safe) ─────────────────────────────────────────────────
     def _set_status(self, msg: str, color: str):
         self._status_sig.emit(msg, color)
 
     def _apply_status(self, msg: str, color: str):
-        self._status_lbl.setText(msg)
-        self._status_lbl.setStyleSheet(
-            f"color: {color}; font-size: 9pt; background: transparent;")
+        # Don't override countdown display when auto-check is enabled
+        if not self._auto_check_enabled:
+            self._status_lbl.setText(msg)
+            self._status_lbl.setStyleSheet(
+                f"color: {color}; font-size: 8pt; background: transparent;")
+        # When auto-check is enabled, only update if it's not a countdown message
+        elif not msg.startswith("⏰"):
+            # Temporarily show the message, but countdown will override it
+            self._status_lbl.setText(msg)
+            self._status_lbl.setStyleSheet(
+                f"color: {color}; font-size: 8pt; background: transparent;")
 
-    def _clear_result(self):
+    def _toggle_auto_check(self):
+        """Toggle automatic proxy checking every 30 seconds."""
+        self._auto_check_enabled = not self._auto_check_enabled
+        if self._auto_check_enabled:
+            self._auto_check_timer.start(30000)  # 30 seconds
+            self._countdown_remaining = 30
+            self._countdown_timer.start(1000)  # Update every second
+            self._auto_check_btn.setText("  ⏰  Auto Check: ON")
+            self._auto_check_btn.setProperty("checked", True)
+            self._update_countdown_display()
+        else:
+            self._auto_check_timer.stop()
+            self._countdown_timer.stop()
+            self._auto_check_btn.setText("  ⏰  Auto Check: OFF")
+            self._auto_check_btn.setProperty("checked", False)
+            self._set_status("", C['subtext'])  # Clear countdown display
+        # Force style update
+        self._auto_check_btn.style().unpolish(self._auto_check_btn)
+        self._auto_check_btn.style().polish(self._auto_check_btn)
+
+        # Update visibility of buttons on all proxy cards
+        self._update_all_proxy_cards_visibility()
+
+    def _update_countdown(self):
+        """Update countdown timer display."""
+        self._countdown_remaining -= 1
+        if self._countdown_remaining <= 0:
+            self._countdown_remaining = 30
+        self._update_countdown_display()
+
+    def _update_countdown_display(self):
+        """Update the countdown display in status label."""
+        if self._auto_check_enabled:
+            self._status_lbl.setText(f"⏰ Next check in {self._countdown_remaining}s")
+            self._status_lbl.setStyleSheet(f"color: {C['accent']}; font-size: 8pt; background: transparent;")
+        else:
+            self._status_lbl.setText("")
+            self._status_lbl.setStyleSheet(f"color: {C['subtext']}; font-size: 8pt; background: transparent;")
+
+    def _update_all_proxy_cards_visibility(self):
+        """Update button visibility on all proxy cards based on auto-check state."""
+        count = self._result_layout.count()
+        for i in range(count - 1):  # -1 to skip the stretch
+            item = self._result_layout.itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                if widget.objectName() == "proxyCard" and hasattr(widget, 'update_button_visibility'):
+                    widget.update_button_visibility(self._auto_check_enabled)
+
+    def _auto_check_all_proxies(self):
+        """Automatically check all proxy cards and refresh dead ones."""
+        # Reset countdown
+        self._countdown_remaining = 30
+
+        # Iterate through all widgets in the result layout
+        count = self._result_layout.count()
+        if count <= 1:  # Only stretch item or empty
+            return
+
+        for i in range(count - 1):  # -1 to skip the stretch
+            item = self._result_layout.itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                # Check if it's a ProxyCard by checking the object name
+                if widget.objectName() == "proxyCard" and hasattr(widget, '_auto_check_triggered') and hasattr(widget, '_do_check'):
+                    # Trigger check for this card, marking it as auto-triggered
+                    widget._auto_check_triggered = True
+                    widget._do_check()
+
+    def _clear_cache(self):
+        """Wipe all saved proxies and clear the result view."""
+        reply = QMessageBox.question(
+            self, "Clear Cache",
+            "Xóa toàn bộ proxy đã lưu?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            data = _load_app_data()
+            data["proxies"] = []
+            _save_app_data(data)
+        except Exception as e:
+            print(f"Error clearing cache: {e}")
         self._clear_rows()
-        self._status_lbl.setText("")
-
-        # Clear input fields
-        self._area_cb.setCurrentText("")  # Clear country selection
-        self._state_cb.clear()  # Clear state dropdown
-        self._network_cb.setCurrentText("")  # Clear network selection
-        self._port_edit.clear()
-        self._number_edit.setText("1")  # Reset to default
-        self._start_edit.setText("40000")  # Reset to default
+        self._res_count_lbl.setText("0 proxies")
+        self._set_status("🗑  Cache cleared", C['subtext'])
 # ═══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     app = QApplication(sys.argv)

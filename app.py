@@ -4,12 +4,12 @@ import requests
 import os
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
-from PySide6.QtGui     import QColor, QFont, QIcon, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout
+from PySide6.QtGui     import QColor, QFont, QIcon, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout, QPainterPath, QBrush
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QLineEdit, QComboBox, QPushButton,
     QTextEdit, QFrame, QSizePolicy, QCompleter, QMessageBox,
-    QScrollArea, QStyledItemDelegate, QStyleOptionViewItem, QStyle
+    QScrollArea, QStyledItemDelegate, QStyleOptionViewItem, QStyle, QGraphicsBlurEffect
 )
 
 # ─── Data ──────────────────────────────────────────────────────────────────────
@@ -1356,6 +1356,42 @@ class AutoComboBox(QComboBox):
             self.showPopup()
 
 
+# ─── Blur Overlay ─────────────────────────────────────────────────────────────
+class BlurOverlay(QWidget):
+    """Semi-transparent overlay that blocks mouse events on the content beneath it."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+        self.setObjectName("blurOverlay")
+        self.hide()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # Dark semi-transparent overlay
+        painter.fillRect(self.rect(), QColor(15, 17, 23, 170))
+        # Small hint text
+        painter.setPen(QColor(148, 163, 184, 200))
+        painter.setFont(QFont("Segoe UI", 10))
+        painter.drawText(
+            self.rect(),
+            Qt.AlignmentFlag.AlignCenter,
+            "⚠  Cliproxy is not running\nPlease open Cliproxy to use the app",
+        )
+        painter.end()
+
+    def mousePressEvent(self, event):
+        event.accept()   # eat all clicks
+
+    def mouseReleaseEvent(self, event):
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        event.accept()
+
+
 # ─── Main window ───────────────────────────────────────────────────────────────
 class ProxyApp(QMainWindow):
     _status_sig = Signal(str, str)
@@ -1384,6 +1420,12 @@ class ProxyApp(QMainWindow):
             (screen.width()  - self.width())  // 2,
             (screen.height() - self.height()) // 2,
         )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, '_blur_overlay') and hasattr(self, '_content_widget'):
+            if self._blur_overlay.isVisible():
+                self._blur_overlay.setGeometry(self._content_widget.geometry())
 
     def _set_defaults(self):
         # Set default values: Area Code = US, State = Florida, Network = ATT
@@ -1439,7 +1481,14 @@ class ProxyApp(QMainWindow):
         self._cliproxy_timer.setInterval(3000)
         self._cliproxy_timer.timeout.connect(self._check_cliproxy_silent)
         self._cliproxy_timer.start()
-        self._check_cliproxy_silent()  # initial check
+        # NOTE: initial check is deferred to after blur overlay is created (end of _build_ui)
+
+        # ── Content widget (everything below API bar) — will be blurred ──────
+        self._content_widget = QWidget()
+        self._content_widget.setObjectName("contentWidget")
+        content_layout = QVBoxLayout(self._content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
 
         # ── Form card (full width) ──────────────────────────────────────────────
         card = QWidget(); card.setObjectName("card")
@@ -1499,8 +1548,8 @@ class ProxyApp(QMainWindow):
         g2.addWidget(self._city_cb, 2, 2)
 
         card_v.addLayout(g2)
-        main.addWidget(card)
-        main.addSpacing(12)
+        content_layout.addWidget(card)
+        content_layout.addSpacing(12)
 
         # ── Action bar (full width, 2 buttons) ───────────────────────────────
         act = QHBoxLayout(); act.setSpacing(10)
@@ -1558,12 +1607,12 @@ class ProxyApp(QMainWindow):
         act.addWidget(self._bulk_check_btn, 1)
         act.addWidget(self._bulk_refresh_btn, 1)
         act.addWidget(self._auto_check_btn, 2)
-        main.addLayout(act)
-        main.addSpacing(6)
+        content_layout.addLayout(act)
+        content_layout.addSpacing(6)
 
         div0 = QFrame(); div0.setObjectName("divider"); div0.setFixedHeight(1)
-        main.addWidget(div0)
-        main.addSpacing(14)
+        content_layout.addWidget(div0)
+        content_layout.addSpacing(14)
 
         # ── Result section ────────────────────────────────────────────────────
         res_bar = QHBoxLayout()
@@ -1578,8 +1627,8 @@ class ProxyApp(QMainWindow):
         res_bar.addWidget(self._res_count_lbl)
         res_bar.addStretch()
         res_bar.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignRight)
-        main.addLayout(res_bar)
-        main.addSpacing(4)
+        content_layout.addLayout(res_bar)
+        content_layout.addSpacing(4)
 
         # Scroll area containing a VBox of proxy cards
         self._scroll = QScrollArea()
@@ -1595,10 +1644,22 @@ class ProxyApp(QMainWindow):
         self._result_layout.addStretch()
 
         self._scroll.setWidget(self._result_container)
-        main.addWidget(self._scroll, 1)
+        content_layout.addWidget(self._scroll, 1)
+
+        main.addWidget(self._content_widget, 1)
+
+        # ── Blur overlay (sibling of content_widget inside root) ─────────────
+        self._blur_overlay = BlurOverlay(root)
+        self._blur_effect = QGraphicsBlurEffect()
+        self._blur_effect.setBlurRadius(8)
+        self._content_widget.setGraphicsEffect(self._blur_effect)
+        self._blur_effect.setEnabled(False)   # start unblurred
 
         # Load cached proxies on startup
         self._load_cached_proxies()
+
+        # Initial Cliproxy check — runs immediately now that overlay is ready
+        self._check_cliproxy_silent()
 
     # ── Helper label factories ───────────────────────────────────────────────
     def _sec_lbl(self, grid, text, col, row, span=1):
@@ -1659,6 +1720,24 @@ class ProxyApp(QMainWindow):
         self._cliproxy_btn.setProperty("running", "true" if running else "false")
         self._cliproxy_btn.style().unpolish(self._cliproxy_btn)
         self._cliproxy_btn.style().polish(self._cliproxy_btn)
+        self._apply_cliproxy_lock(running)
+
+    def _apply_cliproxy_lock(self, running: bool):
+        """Blur + disable content area when Cliproxy is not running."""
+        if not hasattr(self, '_blur_overlay'):
+            return
+        if running:
+            # Remove blur and overlay
+            self._blur_effect.setEnabled(False)
+            self._blur_overlay.hide()
+        else:
+            # Apply blur and show overlay
+            self._blur_effect.setEnabled(True)
+            # Resize overlay to cover only the content widget area
+            cw = self._content_widget
+            self._blur_overlay.setGeometry(cw.geometry())
+            self._blur_overlay.raise_()
+            self._blur_overlay.show()
 
     def _check_cliproxy_silent(self):
         """Auto-check called by timer — updates button only, no status bar."""

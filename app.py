@@ -253,14 +253,27 @@ API_BASE     = "http://192.168.1.29"
 API_SUFFIX = ":1998/api"
 
 if getattr(sys, 'frozen', False):
-    if hasattr(sys, '_MEIPASS'):
-        _DATA_DIR = sys._MEIPASS
-    else:
-        _DATA_DIR = os.path.dirname(sys.executable)
+    # _BUNDLE_DIR: read-only bundled assets (icon, etc.) live in _MEIPASS temp folder.
+    _BUNDLE_DIR = sys._MEIPASS
+    # _DATA_DIR: writable persistent data (data.json) lives next to the EXE,
+    # NOT in _MEIPASS which is deleted when the app exits.
+    _DATA_DIR = os.path.dirname(sys.executable)
 else:
-    _DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+    _BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))
+    _DATA_DIR   = os.path.dirname(os.path.abspath(__file__))
 
 APP_DATA_FILE = os.path.join(_DATA_DIR, "data.json")
+
+# If running as frozen EXE and data.json doesn't exist next to EXE yet,
+# seed it from the bundled copy inside _MEIPASS (first-run bootstrap).
+if getattr(sys, 'frozen', False) and not os.path.exists(APP_DATA_FILE):
+    _bundled = os.path.join(sys._MEIPASS, "data.json")
+    if os.path.exists(_bundled):
+        import shutil
+        try:
+            shutil.copy2(_bundled, APP_DATA_FILE)
+        except Exception:
+            pass  # will fall back to empty dict
 
 def _load_app_data() -> dict:
     """Load the unified data file. Returns dict with keys: api_base, proxies."""
@@ -582,6 +595,20 @@ QPushButton#clearBtn {{
 }}
 QPushButton#clearBtn:hover  {{ background: {C['border']}; color: {C['text']}; }}
 QPushButton#clearBtn:pressed {{ background: #252840; }}
+QPushButton#cliproxyBtn {{
+    background: {C['card']};
+    color: {C['label']};
+    border: 1px solid #e05252;
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 9pt;
+    font-weight: 700;
+}}
+QPushButton#cliproxyBtn[running="true"] {{
+    border: 1px solid #4caf50;
+    color: {C['text']};
+}}
+QPushButton#cliproxyBtn:hover {{ background: {C['border']}; }}
 QPushButton#autoCheckBtn {{
     background: {C['card']};
     color: {C['label']};
@@ -1393,11 +1420,27 @@ class ProxyApp(QMainWindow):
         self._api_save_btn.clicked.connect(self._save_api_base_manual)
         self._api_edit.returnPressed.connect(self._save_api_base)
         self._api_edit.editingFinished.connect(self._save_api_base)
+
+        self._cliproxy_btn = QPushButton("Cliproxy")
+        self._cliproxy_btn.setObjectName("cliproxyBtn")
+        self._cliproxy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._cliproxy_btn.setFixedSize(80, 36)
+        self._cliproxy_btn.setToolTip("Click to check Cliproxy status")
+        self._cliproxy_btn.clicked.connect(self._check_cliproxy)
+
         api_bar.addWidget(api_lbl)
         api_bar.addWidget(self._api_edit, 1)
         api_bar.addWidget(self._api_save_btn)
+        api_bar.addWidget(self._cliproxy_btn)
         main.addLayout(api_bar)
         main.addSpacing(10)
+
+        # ── Cliproxy status auto-refresh timer ───────────────────────────────
+        self._cliproxy_timer = QTimer(self)
+        self._cliproxy_timer.setInterval(3000)
+        self._cliproxy_timer.timeout.connect(self._check_cliproxy_silent)
+        self._cliproxy_timer.start()
+        self._check_cliproxy_silent()  # initial check
 
         # ── Form card (full width) ──────────────────────────────────────────────
         card = QWidget(); card.setObjectName("card")
@@ -1592,6 +1635,41 @@ class ProxyApp(QMainWindow):
         save_api_base(url)
         if show_status:
             self._set_status("✓  API URL saved", C['success'])
+
+    def _is_cliproxy_running(self) -> bool:
+        """Return True if Cliproxy.exe process is running."""
+        import subprocess
+        try:
+            output = subprocess.check_output(
+                ["tasklist", "/FI", "IMAGENAME eq Cliproxy.exe"],
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+            ).decode(errors="ignore")
+            return "cliproxy" in output.lower()
+        except Exception:
+            return False
+
+    def _update_cliproxy_btn(self, running: bool):
+        """Update button border color based on Cliproxy running state."""
+        self._cliproxy_btn.setProperty("running", "true" if running else "false")
+        self._cliproxy_btn.setToolTip(
+            "Cliproxy is running ✔" if running else "Cliproxy is NOT running ✖"
+        )
+        self._cliproxy_btn.style().unpolish(self._cliproxy_btn)
+        self._cliproxy_btn.style().polish(self._cliproxy_btn)
+
+    def _check_cliproxy_silent(self):
+        """Auto-check called by timer — no status bar update."""
+        self._update_cliproxy_btn(self._is_cliproxy_running())
+
+    def _check_cliproxy(self):
+        """Manual check when user clicks the button."""
+        running = self._is_cliproxy_running()
+        self._update_cliproxy_btn(running)
+        if running:
+            self._set_status("✔  Cliproxy is running", C['success'])
+        else:
+            self._set_status("✖  Cliproxy is NOT running", "#e05252")
 
     def _save_api_base_manual(self):
         url = self._api_edit.text().strip()
@@ -1978,7 +2056,7 @@ class ProxyApp(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyleSheet(STYLESHEET)
-    icon_path = os.path.join(_DATA_DIR, "icon.png")
+    icon_path = os.path.join(_BUNDLE_DIR, "icon.png")
     app.setWindowIcon(QIcon(icon_path))
     app.setFont(QFont("Segoe UI", 10))
     win = ProxyApp()

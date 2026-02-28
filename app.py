@@ -1,6 +1,7 @@
 import sys
 import json
 import requests
+import time
 import os
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
@@ -492,6 +493,12 @@ QLabel#statusChecking {{
     background: transparent;
     padding: 0 2px;
 }}
+QLabel#pingLabel {{
+    color: {C['subtext']};
+    font-size: 7pt;
+    background: transparent;
+    padding: 0 2px;
+}}
 /* Card action buttons */
 QPushButton#cardRefreshBtn {{
     background: transparent;
@@ -606,7 +613,7 @@ class FetchWorker(QObject):
 
 # ─── Proxy check worker ────────────────────────────────────────────────────────
 class ProxyCheckWorker(QObject):
-    result = Signal(bool)   # True = alive, False = dead
+    result = Signal(bool, float)   # alive, elapsed_ms (-1 if failed)
 
     TEST_URL = "http://httpbin.org/ip"
 
@@ -620,10 +627,12 @@ class ProxyCheckWorker(QObject):
                 "http":  f"http://{self._proxy}",
                 "https": f"http://{self._proxy}",
             }
+            t0 = time.monotonic()
             resp = requests.get(self.TEST_URL, proxies=proxies, timeout=8)
-            self.result.emit(resp.status_code == 200)
+            elapsed = (time.monotonic() - t0) * 1000
+            self.result.emit(resp.status_code == 200, elapsed)
         except Exception:
-            self.result.emit(False)
+            self.result.emit(False, -1.0)
 
 
 # ─── Refresh worker (re-fetch one proxy slot by its original params) ───────────
@@ -683,20 +692,19 @@ class ProxyCard(QWidget):
         ip, port = self._ip_port()
         proxy_str = f"{ip}:{port}" if ip else "unknown"
 
-        outer = QVBoxLayout(self)
+        # ── Outer: single HBox — left info col | stretch | status col | buttons ──
+        outer = QHBoxLayout(self)
         outer.setContentsMargins(14, 10, 14, 10)
-        outer.setSpacing(3)
+        outer.setSpacing(10)
 
-        # ── Row 1: ip:port  +  status badge  +  action buttons ──
-        row1 = QHBoxLayout()
-        row1.setSpacing(8)
-        row1.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        # ── Left column: ip:port+copy on top, tags below ──
+        left_col = QVBoxLayout()
+        left_col.setSpacing(4)
+        left_col.setContentsMargins(0, 0, 0, 0)
 
-        # Group ip label + copy button tightly together
         ip_copy_layout = QHBoxLayout()
         ip_copy_layout.setSpacing(4)
         ip_copy_layout.setContentsMargins(0, 0, 0, 0)
-        ip_copy_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self._ip_lbl = QLabel(proxy_str)
         self._ip_lbl.setObjectName("proxyIp")
@@ -709,14 +717,61 @@ class ProxyCard(QWidget):
         self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._copy_btn.setFixedHeight(24)
         ip_copy_layout.addWidget(self._copy_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        ip_copy_layout.addStretch()
 
-        row1.addLayout(ip_copy_layout)
-        row1.addStretch(1)
+        left_col.addLayout(ip_copy_layout)
+
+        # Tags row
+        tags_layout = QHBoxLayout()
+        tags_layout.setSpacing(6)
+        tags_layout.setContentsMargins(0, 0, 0, 0)
+
+        meta_fields = [
+            ("country", "🌍"),
+            ("state",   "📍"),
+            ("city",    "🏙️"),
+            ("isp",     "📡"),
+        ]
+        has_tag = False
+        for key, icon in meta_fields:
+            val = self._proxy_dict.get(key, "")
+            if val and str(val).strip():
+                tag = QLabel(f"{icon} {val}")
+                tag.setObjectName("tagLabel")
+                tags_layout.addWidget(tag)
+                has_tag = True
+
+        if not has_tag:
+            for k, v in self._proxy_dict.items():
+                if k in ("ip", "host") or not v:
+                    continue
+                tag = QLabel(f"{k}: {v}")
+                tag.setObjectName("tagLabel")
+                tags_layout.addWidget(tag)
+
+        tags_layout.addStretch()
+        left_col.addLayout(tags_layout)
+
+        outer.addLayout(left_col, 1)
+
+        # ── Status + ping column (right-aligned, aligned to left col rows) ──
+        status_widget = QWidget()
+        status_widget.setStyleSheet("background: transparent;")
+        status_col = QVBoxLayout(status_widget)
+        status_col.setSpacing(4)
+        status_col.setContentsMargins(0, 0, 0, 0)
 
         self._status_lbl = QLabel("● Status: N/A")
         self._status_lbl.setObjectName("statusUnknown")
-        row1.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
+        status_col.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignRight)
 
+        self._ping_lbl = QLabel("0 ms")
+        self._ping_lbl.setObjectName("pingLabel")
+        status_col.addWidget(self._ping_lbl, 0, Qt.AlignmentFlag.AlignRight)
+
+        outer.addWidget(status_widget, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        # ── Action buttons (centered vertically across both rows) ──
         self._refresh_btn = QPushButton("↻  Refresh")
         self._refresh_btn.setObjectName("cardRefreshBtn")
         self._refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -732,42 +787,9 @@ class ProxyCard(QWidget):
         self._delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._delete_btn.setFixedHeight(28)
 
-        row1.addWidget(self._refresh_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        row1.addWidget(self._check_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        row1.addWidget(self._delete_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        outer.addLayout(row1)
-
-        # ── Row 2: info tags ──
-        row2 = QHBoxLayout()
-        row2.setSpacing(6)
-        row2.setContentsMargins(0, 0, 0, 0)
-
-        meta_fields = [
-            ("country", "🌍"),
-            ("state",   "📍"),
-            ("city",    "🏙️"),
-            ("isp",     "📡"),
-        ]
-        has_tag = False
-        for key, icon in meta_fields:
-            val = self._proxy_dict.get(key, "")
-            if val and str(val).strip():
-                tag = QLabel(f"{icon} {val}")
-                tag.setObjectName("tagLabel")
-                row2.addWidget(tag)
-                has_tag = True
-
-        if not has_tag:
-            # Fallback: show all non-empty fields
-            for k, v in self._proxy_dict.items():
-                if k in ("ip", "host") or not v:
-                    continue
-                tag = QLabel(f"{k}: {v}")
-                tag.setObjectName("tagLabel")
-                row2.addWidget(tag)
-
-        row2.addStretch()
-        outer.addLayout(row2)
+        outer.addWidget(self._refresh_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        outer.addWidget(self._check_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        outer.addWidget(self._delete_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # ── Wire signals ──
         self._check_btn.clicked.connect(self._do_check)
@@ -805,6 +827,7 @@ class ProxyCard(QWidget):
         self._status_lbl.setObjectName("statusChecking")
         self._status_lbl.setText("… checking")
         self._status_lbl.setStyleSheet("")   # force re-read from QSS
+        self._ping_lbl.setText("")
 
         self._check_thread = QThread()
         self._check_worker = ProxyCheckWorker(proxy_str)
@@ -814,11 +837,13 @@ class ProxyCard(QWidget):
         self._check_worker.result.connect(self._check_thread.quit)
         self._check_thread.start()
 
-    def _on_check_result(self, alive: bool):
+    def _on_check_result(self, alive: bool, elapsed: float):
         self._check_btn.setEnabled(True)
         if alive:
             self._status_lbl.setObjectName("statusAlive")
             self._status_lbl.setText("● Alive")
+            if elapsed >= 0:
+                self._ping_lbl.setText(f"{elapsed:.0f} ms")
             was_auto = self._auto_check_triggered
             self._auto_check_triggered = False  # Reset flag
             if was_auto:
@@ -826,6 +851,7 @@ class ProxyCard(QWidget):
         else:
             self._status_lbl.setObjectName("statusDead")
             self._status_lbl.setText("✕ Dead")
+            self._ping_lbl.setText("")
             # Auto-refresh if this check was triggered automatically
             if self._auto_check_triggered:
                 self._auto_check_triggered = False  # Reset flag
@@ -1509,11 +1535,7 @@ class ProxyApp(QMainWindow):
         act.addLayout(auto_check_group, 2)
 
         content_layout.addLayout(act)
-        content_layout.addSpacing(6)
-
-        div0 = QFrame(); div0.setObjectName("divider"); div0.setFixedHeight(1)
-        content_layout.addWidget(div0)
-        content_layout.addSpacing(14)
+        content_layout.addSpacing(12)
 
         # ── Result section ────────────────────────────────────────────────────
         res_bar = QHBoxLayout()
@@ -1613,11 +1635,11 @@ class ProxyApp(QMainWindow):
     def _update_cliproxy_btn(self, running: bool):
         """Update button label + border color based on Cliproxy running state."""
         if running:
-            self._cliproxy_btn.setText("Cliproxy: On")
-            self._cliproxy_btn.setToolTip("Cliproxy is running ✔")
+            self._cliproxy_btn.setText("CliProxy: On")
+            self._cliproxy_btn.setToolTip("CliProxy is running ✔")
         else:
-            self._cliproxy_btn.setText("Open Cliproxy")
-            self._cliproxy_btn.setToolTip("Cliproxy is not running — click to open")
+            self._cliproxy_btn.setText("Open CliProxy")
+            self._cliproxy_btn.setToolTip("CliProxy is not running — click to open")
         self._cliproxy_btn.setProperty("running", "true" if running else "false")
         self._cliproxy_btn.style().unpolish(self._cliproxy_btn)
         self._cliproxy_btn.style().polish(self._cliproxy_btn)
@@ -1653,15 +1675,15 @@ class ProxyApp(QMainWindow):
                 creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
                 shell=False,
             )
-            self._set_status("⏳  Opening Cliproxy...", C['label'])
+            self._set_status("⏳  Opening CliProxy...", C['label'])
         except Exception as e:
-            self._set_status(f"✖  Cannot open Cliproxy: {e}", "#e05252")
+            self._set_status(f"✖  Cannot open CliProxy: {e}", "#e05252")
 
     def _cliproxy_btn_clicked(self):
-        """Called when user clicks the Cliproxy button."""
+        """Called when user clicks the CliProxy button."""
         if self._is_cliproxy_running():
             # Already running — just update status bar info
-            self._set_status("✔  Cliproxy is already running", C['success'])
+            self._set_status("✔  CliProxy is already running", C['success'])
         else:
             # Not running — try to open it
             self._open_cliproxy()

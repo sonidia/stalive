@@ -2,25 +2,7 @@
   "api_base": "http://192.168.1.27:1998/api",
   "proxies": [
     {
-      "ip": "192.168.1.29",
-      "port": "2004",
-      "country": "US",
-      "state": "Florida",
-      "city": "Jacksonville",
-      "isp": "ATT",
-      "_city": "Jacksonville"
-    },
-    {
-      "ip": "192.168.1.29",
-      "port": "2002",
-      "country": "US",
-      "state": "Florida",
-      "city": "Jacksonville",
-      "isp": "ATT",
-      "_city": "Jacksonville"
-    },
-    {
-      "ip": "192.168.1.29",
+      "ip": "192.168.1.27",
       "port": "2000",
       "country": "US",
       "state": "Florida",
@@ -29,8 +11,8 @@
       "_city": "Jacksonville"
     },
     {
-      "ip": "192.168.1.29",
-      "port": "2005",
+      "ip": "192.168.1.27",
+      "port": "2002",
       "country": "US",
       "state": "Florida",
       "city": "Jacksonville",
@@ -38,7 +20,7 @@
       "_city": "Jacksonville"
     },
     {
-      "ip": "192.168.1.29",
+      "ip": "192.168.1.27",
       "port": "2001",
       "country": "US",
       "state": "Florida",
@@ -47,7 +29,25 @@
       "_city": "Jacksonville"
     },
     {
-      "ip": "192.168.1.29",
+      "ip": "192.168.1.27",
+      "port": "2004",
+      "country": "US",
+      "state": "Florida",
+      "city": "Jacksonville",
+      "isp": "ATT",
+      "_city": "Jacksonville"
+    },
+    {
+      "ip": "192.168.1.27",
+      "port": "2005",
+      "country": "US",
+      "state": "Florida",
+      "city": "Jacksonville",
+      "isp": "ATT",
+      "_city": "Jacksonville"
+    },
+    {
+      "ip": "192.168.1.27",
       "port": "2003",
       "country": "US",
       "state": "Florida",

@@ -4,7 +4,7 @@ import requests
 import os
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
-from PySide6.QtGui     import QColor, QFont, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout
+from PySide6.QtGui     import QColor, QFont, QIcon, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QLineEdit, QComboBox, QPushButton,
@@ -252,9 +252,11 @@ ALL_NETWORKS = sorted({n for d in COUNTRY_DATA.values() for n in d["networks"]})
 API_BASE     = "http://192.168.1.29"
 API_SUFFIX = ":1998/api"
 
-# ── Resolve data directory (works both as .py and PyInstaller exe) ──────────
 if getattr(sys, 'frozen', False):
-    _DATA_DIR = os.path.dirname(sys.executable)
+    if hasattr(sys, '_MEIPASS'):
+        _DATA_DIR = sys._MEIPASS
+    else:
+        _DATA_DIR = os.path.dirname(sys.executable)
 else:
     _DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -604,15 +606,15 @@ QPushButton#autoCheckBtn:disabled {{
 }}
 QPushButton#bulkCheckBtn {{
     background: {C['card']};
-    color: {C['accent2']};
+    color: {C['label']};
     border: 1.5px solid {C['border']};
     border-radius: 8px;
     padding: 10px 18px;
     font-size: 10pt;
     font-weight: 700;
 }}
-QPushButton#bulkCheckBtn:hover  {{ background: {C['accent']}; color: #fff; border-color: {C['accent']}; }}
-QPushButton#bulkCheckBtn:pressed {{ background: #5a52e0; color: #fff; }}
+QPushButton#bulkCheckBtn:hover  {{ background: {C['border']}; color: {C['text']}; }}
+QPushButton#bulkCheckBtn:pressed {{ background: #252840; }}
 QPushButton#bulkCheckBtn:disabled {{ background: {C['card']}; color: {C['subtext']}; border-color: {C['border']}; }}
 QPushButton#bulkRefreshBtn {{
     background: {C['card']};
@@ -898,7 +900,7 @@ class ProxyCard(QWidget):
         row1.addLayout(ip_copy_layout)
         row1.addStretch(1)
 
-        self._status_lbl = QLabel("● Status: unknown")
+        self._status_lbl = QLabel("● Status: N/A")
         self._status_lbl.setObjectName("statusUnknown")
         row1.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
 
@@ -1481,19 +1483,19 @@ class ProxyApp(QMainWindow):
         self._auto_check_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._auto_check_btn.setFixedHeight(36)
         auto_check_layout = QHBoxLayout(self._auto_check_btn)
-        auto_check_layout.setContentsMargins(10, 10, 10, 10)
+        auto_check_layout.setContentsMargins(10, 0, 0, 0)
         auto_check_layout.setSpacing(0)
-        self._auto_check_label = QLabel("  ⏰ Auto check:")
+        self._auto_check_label = QLabel("⏰ Auto mode:")
         self._auto_check_label.setStyleSheet(f"color: {C['label']}; background: transparent;")
         self._auto_check_status = QLabel("OFF")
-        self._auto_check_status.setMargin(2)
         self._auto_check_status.setStyleSheet(f"color: {C['subtext']}; background: transparent;")
         auto_check_layout.addWidget(self._auto_check_label)
+        auto_check_layout.addSpacing(2)
         auto_check_layout.addWidget(self._auto_check_status)
         auto_check_layout.addStretch()
         self._auto_check_btn.clicked.connect(self._toggle_auto_check)
 
-        self._bulk_check_btn = QPushButton("⚡ Bulk Check")
+        self._bulk_check_btn = QPushButton("⚡Bulk check")
         self._bulk_check_btn.setObjectName("bulkCheckBtn")
         self._bulk_check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._bulk_check_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -1501,7 +1503,7 @@ class ProxyApp(QMainWindow):
         self._bulk_check_btn.setEnabled(False)
         self._bulk_check_btn.clicked.connect(self._bulk_check)
 
-        self._bulk_refresh_btn = QPushButton("↻ Bulk Refresh")
+        self._bulk_refresh_btn = QPushButton("🔄️ Bulk refresh")
         self._bulk_refresh_btn.setObjectName("bulkRefreshBtn")
         self._bulk_refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._bulk_refresh_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -1630,7 +1632,7 @@ class ProxyApp(QMainWindow):
         # Stash form params so they can be embedded into the saved proxy dict
         self._last_fetch_params = params
 
-        self._set_status("⏳  Fetching…", C['subtext'])
+        self._set_status("⏳ Fetching…", C['subtext'])
         self._fetch_btn.setEnabled(False)
 
         self._thread = QThread()
@@ -1976,6 +1978,8 @@ class ProxyApp(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyleSheet(STYLESHEET)
+    icon_path = os.path.join(_DATA_DIR, "icon.png")
+    app.setWindowIcon(QIcon(icon_path))
     app.setFont(QFont("Segoe UI", 10))
     win = ProxyApp()
     win.show()

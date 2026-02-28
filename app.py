@@ -591,14 +591,20 @@ QPushButton#autoCheckBtn:checked {{
     color: #fff;
     border-color: {C['accent']};
 }}
+QPushButton#autoCheckBtn:disabled {{
+    background: {C['card']};
+    color: {C['subtext']};
+    border-color: {C['border']};
+    opacity: 0.5;
+}}
 /* ── Proxy card ── */
 QWidget#proxyCard {{
     background: {C['card']};
-    border: 1px solid {C['border']};
+    border: 1.5px solid #3d4270;
     border-radius: 10px;
 }}
 QWidget#proxyCard:hover {{
-    border-color: {C['border_focus']};
+    border-color: {C['accent']};
 }}
 QLabel#proxyIp {{
     color: {C['text']};
@@ -683,6 +689,18 @@ QPushButton#cardDeleteBtn {{
 }}
 QPushButton#cardDeleteBtn:hover   {{ background: {C['error']}; color: #fff; border-color: {C['error']}; }}
 QPushButton#cardDeleteBtn:pressed  {{ background: #d05555; color: #fff; }}
+QPushButton#cardCopyBtn {{
+    background: transparent;
+    color: {C['subtext']};
+    border: none;
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: 10pt;
+    min-width: 22px;
+    max-width: 22px;
+}}
+QPushButton#cardCopyBtn:hover   {{ color: {C['accent']}; background: {C['border']}; }}
+QPushButton#cardCopyBtn:pressed  {{ color: #fff; background: {C['accent']}; }}
 /* Result scroll area */
 QScrollArea#resultScroll {{
     background: {C['entry_bg']};
@@ -826,15 +844,32 @@ class ProxyCard(QWidget):
         # ── Row 1: ip:port  +  status badge  +  action buttons ──
         row1 = QHBoxLayout()
         row1.setSpacing(8)
+        row1.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
+        # Group ip label + copy button tightly together
+        ip_copy_layout = QHBoxLayout()
+        ip_copy_layout.setSpacing(4)
+        ip_copy_layout.setContentsMargins(0, 0, 0, 0)
+        ip_copy_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self._ip_lbl = QLabel(proxy_str)
         self._ip_lbl.setObjectName("proxyIp")
         self._ip_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        row1.addWidget(self._ip_lbl, 1)
+        ip_copy_layout.addWidget(self._ip_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self._copy_btn = QPushButton("⧉")
+        self._copy_btn.setObjectName("cardCopyBtn")
+        self._copy_btn.setToolTip("Copy proxy")
+        self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._copy_btn.setFixedHeight(24)
+        ip_copy_layout.addWidget(self._copy_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        row1.addLayout(ip_copy_layout)
+        row1.addStretch(1)
 
         self._status_lbl = QLabel("● Unknown")
         self._status_lbl.setObjectName("statusUnknown")
-        row1.addWidget(self._status_lbl)
+        row1.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self._refresh_btn = QPushButton("↻  Refresh")
         self._refresh_btn.setObjectName("cardRefreshBtn")
@@ -851,9 +886,9 @@ class ProxyCard(QWidget):
         self._delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._delete_btn.setFixedHeight(28)
 
-        row1.addWidget(self._refresh_btn)
-        row1.addWidget(self._check_btn)
-        row1.addWidget(self._delete_btn)
+        row1.addWidget(self._refresh_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        row1.addWidget(self._check_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        row1.addWidget(self._delete_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         outer.addLayout(row1)
 
         # ── Row 2: info tags ──
@@ -864,6 +899,7 @@ class ProxyCard(QWidget):
         meta_fields = [
             ("country", "🌍"),
             ("state",   "📍"),
+            ("city",    "🏙️"),
             ("isp",     "📡"),
         ]
         has_tag = False
@@ -891,12 +927,21 @@ class ProxyCard(QWidget):
         self._check_btn.clicked.connect(self._do_check)
         self._refresh_btn.clicked.connect(self._do_refresh)
         self._delete_btn.clicked.connect(self._do_delete)
+        self._copy_btn.clicked.connect(self._do_copy)
 
     def update_button_visibility(self, auto_check_enabled: bool):
         """Update visibility of check and refresh buttons based on auto-check state."""
         # Hide check and refresh buttons when auto-check is enabled
         self._check_btn.setVisible(not auto_check_enabled)
         self._refresh_btn.setVisible(not auto_check_enabled)
+
+    # ── Copy ──
+    def _do_copy(self):
+        ip, port = self._ip_port()
+        proxy_str = f"{ip}:{port}" if ip else "unknown"
+        QApplication.clipboard().setText(proxy_str)
+        self._copy_btn.setText("✓")
+        QTimer.singleShot(1500, lambda: self._copy_btn.setText("⧉"))
 
     # ── Delete ──
     def _do_delete(self):
@@ -1332,7 +1377,7 @@ class ProxyApp(QMainWindow):
         g1.setHorizontalSpacing(12); g1.setVerticalSpacing(6)
         for i in range(3): g1.setColumnStretch(i, 1)
 
-        self._sec_lbl(g1, "🗺️  Location", 0, 0, 3)
+        self._sec_lbl(g1, "🗺️  Settings", 0, 0, 3)
         self._fld_lbl(g1, "AREA CODE",        0, 1)
         self._fld_lbl(g1, "STATE / PROVINCE", 1, 1)
         self._fld_lbl(g1, "NETWORK / ISP",    2, 1)
@@ -1366,8 +1411,8 @@ class ProxyApp(QMainWindow):
         g2.setHorizontalSpacing(12); g2.setVerticalSpacing(6)
         for i in range(3): g2.setColumnStretch(i, 1)
 
-        sec2 = QLabel("⚙️  Query Options"); sec2.setObjectName("section")
-        g2.addWidget(sec2, 0, 0, 1, 3)
+        # sec2 = QLabel("⚙️  Query Options"); sec2.setObjectName("section")
+        # g2.addWidget(sec2, 0, 0, 1, 3)
         self._fld_lbl(g2, "PORT",              0, 1)
         self._fld_lbl(g2, "NUMBER OF RESULTS", 1, 1)
         self._fld_lbl(g2, "CITY",      2, 1)
@@ -1643,6 +1688,7 @@ class ProxyApp(QMainWindow):
                 self._add_proxy_card(proxy)
         # Update result header count
         self._res_count_lbl.setText(f"{len(cached)} proxies")
+        self._update_auto_check_btn_state(len(cached))
 
     def _add_info_row(self, text: str, color: str = None, is_error: bool = False):
         lbl = QLabel(text)
@@ -1658,6 +1704,8 @@ class ProxyApp(QMainWindow):
         card.refreshed.connect(self._on_card_refreshed)
         card.update_button_visibility(self._auto_check_enabled)  # Set initial visibility
         self._result_layout.insertWidget(self._result_layout.count() - 1, card)
+        count = self._result_layout.count() - 1  # exclude stretch
+        self._update_auto_check_btn_state(count)
 
     def _on_card_deleted(self, card: ProxyCard):
         self._result_layout.removeWidget(card)
@@ -1665,6 +1713,7 @@ class ProxyApp(QMainWindow):
         # Update count
         count = self._result_layout.count() - 1  # exclude stretch
         self._res_count_lbl.setText(f"{count} proxies")
+        self._update_auto_check_btn_state(count)
 
     def _on_card_refreshed(self, old_card: ProxyCard, new_proxy: dict):
         """Replace old card in-place with a new one after refresh."""
@@ -1743,6 +1792,23 @@ class ProxyApp(QMainWindow):
                 widget = item.widget()
                 if widget.objectName() == "proxyCard" and hasattr(widget, 'update_button_visibility'):
                     widget.update_button_visibility(self._auto_check_enabled)
+
+    def _update_auto_check_btn_state(self, count: int = None):
+        """Enable/disable the Auto Check button based on whether there are proxy cards."""
+        if count is None:
+            count = self._result_layout.count() - 1  # exclude stretch
+        has_proxies = count > 0
+        self._auto_check_btn.setEnabled(has_proxies)
+        if not has_proxies and self._auto_check_enabled:
+            # Turn off auto check if list becomes empty
+            self._auto_check_enabled = False
+            self._auto_check_timer.stop()
+            self._countdown_timer.stop()
+            self._auto_check_btn.setText("  ⏰  Auto Check: OFF")
+            self._auto_check_btn.setProperty("checked", False)
+            self._auto_check_btn.style().unpolish(self._auto_check_btn)
+            self._auto_check_btn.style().polish(self._auto_check_btn)
+            self._update_all_proxy_cards_visibility()
 
     def _auto_check_all_proxies(self):
         """Automatically check all proxy cards and refresh dead ones."""

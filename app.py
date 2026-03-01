@@ -1353,7 +1353,7 @@ class ProxyApp(QMainWindow):
 
         # ── Result section ────────────────────────────────────────────────────
         self._proxy_search = QLineEdit()
-        self._proxy_search.setPlaceholderText("🔍  Search proxies...")
+        self._proxy_search.setPlaceholderText("🔍 Search proxies...")
         self._proxy_search.setFixedHeight(26)
         self._proxy_search.setMaximumWidth(200)
         self._proxy_search.setStyleSheet(
@@ -1364,8 +1364,23 @@ class ProxyApp(QMainWindow):
         )
         self._proxy_search.textChanged.connect(self._apply_proxy_filter)
 
+        self._sort_btn = QPushButton("⇅ Sort")
+        self._sort_btn.setObjectName("sortBtn")
+        self._sort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sort_btn.setFixedHeight(26)
+        self._sort_btn.setFixedWidth(68)
+        self._sort_btn.setStyleSheet(
+            f"QPushButton {{ background: {PALETTE['entry_bg']}; color: {PALETTE['label']}; "
+            f"border: 1px solid {PALETTE['border']}; border-radius: 4px; "
+            f"padding: 0 8px; font-size: 8pt; }}"
+            f"QPushButton:hover {{ background: {PALETTE['panel']}; border-color: {PALETTE['border_focus']}; color: {PALETTE['text']}; }}"
+            f"QPushButton:pressed {{ background: {PALETTE['accent']}; color: #fff; }}"
+        )
+        self._sort_btn.clicked.connect(self._show_sort_popover)
+        self._current_sort = None   # None | 'country' | 'port' | 'ping'
+
         res_bar = QHBoxLayout()
-        res_bar.setSpacing(8)
+        res_bar.setSpacing(6)
         self._res_count_lbl = QLabel("Total: 0 proxies")
         self._res_count_lbl.setStyleSheet(
             f"color: {PALETTE['accent2']}; font-size: 8pt; font-weight: 700; background: transparent;")
@@ -1375,6 +1390,7 @@ class ProxyApp(QMainWindow):
             f"color: {PALETTE['subtext']}; font-size: 8pt; background: transparent;")
 
         res_bar.addWidget(self._proxy_search)
+        res_bar.addWidget(self._sort_btn)
         res_bar.addStretch()
         res_bar.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignRight)
         res_bar.addWidget(self._res_count_lbl)
@@ -1408,11 +1424,155 @@ class ProxyApp(QMainWindow):
         self._content_widget.setGraphicsEffect(self._blur_effect)
         self._blur_effect.setEnabled(False)   # start unblurred
 
+        # Sort popover (created after _build_ui palette is ready)
+        self._sort_popover = self._make_sort_popover()
+
         # Load cached proxies on startup
         self._load_cached_proxies()
 
         # Initial Cliproxy check — runs immediately now that overlay is ready
         self._check_cliproxy_silent()
+
+    # ── Sort popover ─────────────────────────────────────────────────────────
+    def _make_sort_popover(self) -> QWidget:
+        pop = QWidget(self, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        pop.setObjectName("sortPopover")
+        pop.setFixedWidth(210)
+        layout = QVBoxLayout(pop)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(4)
+
+        options = [
+            ("country", "🌍 Sort by Country"),
+            ("port",    "🔢 Sort by Proxy Number"),
+            ("ping",    "⚡ Sort by Response Time"),
+        ]
+        self._sort_action_btns = {}
+        for key, label in options:
+            btn = QPushButton(label)
+            btn.setObjectName("sortOptionBtn")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(30)
+            btn.setCheckable(True)
+            btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {PALETTE['text']}; "
+                f"border: none; border-radius: 6px; padding: 0 10px; "
+                f"font-size: 9pt; text-align: left; }}"
+                f"QPushButton:hover {{ background: {PALETTE['accent']}; color: #fff; }}"
+                f"QPushButton:checked {{ background: {PALETTE['accent']}; color: #fff; }}"
+            )
+            btn.clicked.connect(lambda checked, k=key: self._apply_sort(k))
+            layout.addWidget(btn)
+            self._sort_action_btns[key] = btn
+
+        # Divider + clear option
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setStyleSheet(f"color: {PALETTE['border']}; margin: 2px 4px;")
+        layout.addWidget(line)
+
+        clear_btn = QPushButton("✕  Clear sort")
+        clear_btn.setObjectName("sortOptionBtn")
+        clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        clear_btn.setFixedHeight(28)
+        clear_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {PALETTE['subtext']}; "
+            f"border: none; border-radius: 6px; padding: 0 10px; "
+            f"font-size: 9pt; text-align: left; }}"
+            f"QPushButton:hover {{ background: {PALETTE['border']}; color: {PALETTE['text']}; }}"
+        )
+        clear_btn.clicked.connect(self._clear_sort)
+        layout.addWidget(clear_btn)
+
+        pop.setStyleSheet(
+            f"QWidget#sortPopover {{ background: {PALETTE['card']}; "
+            f"border: 1.5px solid {PALETTE['border']}; border-radius: 10px; }}"
+        )
+        return pop
+
+    def _show_sort_popover(self):
+        btn = self._sort_btn
+        pos = btn.mapToGlobal(QPoint(0, btn.height() + 4))
+        self._sort_popover.move(pos)
+        self._sort_popover.show()
+
+    def _apply_sort(self, key: str):
+        self._sort_popover.hide()
+        self._current_sort = key
+        # Update checked state on buttons
+        for k, b in self._sort_action_btns.items():
+            b.setChecked(k == key)
+        # Update sort button label to show active sort
+        labels = {"country": "🌍 Sort", "port": "🔢 Sort", "ping": "⚡ Sort"}
+        self._sort_btn.setText(labels.get(key, "⇅ Sort"))
+        self._sort_btn.setStyleSheet(
+            f"QPushButton {{ background: {PALETTE['accent']}; color: #fff; "
+            f"border: 1px solid {PALETTE['accent']}; border-radius: 4px; "
+            f"padding: 0 8px; font-size: 8pt; }}"
+            f"QPushButton:hover {{ background: {PALETTE['btn_hv']}; }}"
+        )
+        self._rebuild_sorted_cards()
+
+    def _clear_sort(self):
+        self._sort_popover.hide()
+        self._current_sort = None
+        for b in self._sort_action_btns.values():
+            b.setChecked(False)
+        self._sort_btn.setText("⇅ Sort")
+        self._sort_btn.setStyleSheet(
+            f"QPushButton {{ background: {PALETTE['entry_bg']}; color: {PALETTE['label']}; "
+            f"border: 1px solid {PALETTE['border']}; border-radius: 4px; "
+            f"padding: 0 8px; font-size: 8pt; }}"
+            f"QPushButton:hover {{ background: {PALETTE['panel']}; border-color: {PALETTE['border_focus']}; color: {PALETTE['text']}; }}"
+            f"QPushButton:pressed {{ background: {PALETTE['accent']}; color: #fff; }}"
+        )
+        self._rebuild_sorted_cards()
+
+    def _sort_key(self, proxy_dict: dict):
+        """Return a sort key for the given proxy dict based on current sort mode."""
+        if self._current_sort == "country":
+            return (proxy_dict.get("country", "") or "").upper()
+        elif self._current_sort == "port":
+            try:
+                return int(proxy_dict.get("port", 0) or 0)
+            except (ValueError, TypeError):
+                return 0
+        elif self._current_sort == "ping":
+            val = proxy_dict.get("ping_ms", None)
+            if val is None:
+                return float("inf")   # no ping goes to end
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return float("inf")
+        return 0
+
+    def _rebuild_sorted_cards(self):
+        """Re-order existing proxy cards in the layout according to current sort."""
+        # Collect all proxy card widgets
+        cards: list[ProxyCard] = []
+        for i in range(self._result_layout.count() - 1):  # exclude stretch
+            widget = self._result_layout.itemAt(i).widget()
+            if widget and isinstance(widget, ProxyCard):
+                cards.append(widget)
+
+        if not cards:
+            return
+
+        if self._current_sort is not None:
+            cards.sort(key=lambda c: self._sort_key(c.proxy_dict))
+
+        # Remove all card widgets from layout (keep stretch)
+        for card in cards:
+            self._result_layout.removeWidget(card)
+
+        # Re-insert in sorted order before the stretch
+        stretch_idx = self._result_layout.count() - 1
+        for i, card in enumerate(cards):
+            self._result_layout.insertWidget(stretch_idx + i, card)
+
+        # Re-apply current search filter so visibility is preserved
+        self._apply_proxy_filter(self._proxy_search.text())
 
     # ── Helper label factories ───────────────────────────────────────────────
     def _sec_lbl(self, grid, text, col, row, span=1):
@@ -1638,6 +1798,9 @@ class ProxyApp(QMainWindow):
         save_proxies_to_file(proxies_to_save)
         # Reload full list so UI is consistent with cache
         self._load_cached_proxies()
+        # Re-apply sort if one is active
+        if self._current_sort is not None:
+            self._rebuild_sorted_cards()
         self._set_status(f"✓  Added {len(proxies_to_save)} proxy(ies)", PALETTE['success'])
 
     def _apply_proxy_filter(self, text: str = ""):

@@ -2,47 +2,25 @@
   "proxies": [
     {
       "ip": "192.168.1.13",
-      "port": "2002",
-      "country": "US",
-      "state": "Florida",
-      "city": "Jacksonville",
-      "isp": "ATT",
-      "_city": "Jacksonville",
-      "ping_ms": 3177.344700001413,
-      "response_ip": "75.60.187.94"
-    },
-    {
-      "ip": "192.168.1.13",
-      "port": "2004",
-      "country": "US",
-      "state": "Florida",
-      "city": "Jacksonville",
-      "isp": "ATT",
-      "_city": "Jacksonville",
-      "ping_ms": 2098.4035000001313,
-      "response_ip": "108.67.161.247"
-    },
-    {
-      "ip": "192.168.1.13",
-      "port": "2005",
-      "country": "US",
-      "state": "Florida",
-      "city": "Jacksonville",
-      "isp": "ATT",
-      "_city": "Jacksonville",
-      "ping_ms": 3707.5449999992998,
-      "response_ip": "107.77.104.45"
-    },
-    {
-      "ip": "192.168.1.13",
       "port": "2003",
       "country": "US",
       "state": "Florida",
       "city": "Jacksonville",
       "isp": "ATT",
       "_city": "Jacksonville",
-      "ping_ms": 3881.7111999996996,
+      "ping_ms": 2391.67069999894,
       "response_ip": "68.23.215.77"
+    },
+    {
+      "ip": "192.168.1.13",
+      "port": "4000",
+      "country": "US",
+      "state": "Arkansas",
+      "city": "Little Rock",
+      "isp": "ATT",
+      "_city": "Little Rock",
+      "ping_ms": 3090.9867999998824,
+      "response_ip": "108.248.64.130"
     },
     {
       "ip": "192.168.1.13",
@@ -52,17 +30,41 @@
       "city": "Jacksonville",
       "isp": "ATT",
       "_city": "Jacksonville",
-      "ping_ms": 2785.2096000005986,
-      "response_ip": "45.27.233.215"
+      "ping_ms": 3698.804600000585,
+      "response_ip": "68.252.220.147"
     },
     {
       "ip": "192.168.1.13",
-      "port": "4000",
+      "port": "2005",
       "country": "US",
-      "state": "Arkansas",
-      "city": "Little Rock",
+      "state": "Florida",
+      "city": "Jacksonville",
       "isp": "ATT",
-      "_city": "Little Rock"
+      "_city": "Jacksonville",
+      "ping_ms": 4893.3648000001995,
+      "response_ip": "108.214.68.240"
+    },
+    {
+      "ip": "192.168.1.13",
+      "port": "2002",
+      "country": "US",
+      "state": "Florida",
+      "city": "Jacksonville",
+      "isp": "ATT",
+      "_city": "Jacksonville",
+      "ping_ms": 2084.247900000264,
+      "response_ip": "208.191.69.253"
+    },
+    {
+      "ip": "192.168.1.13",
+      "port": "2004",
+      "country": "US",
+      "state": "Florida",
+      "city": "Jacksonville",
+      "isp": "ATT",
+      "_city": "Jacksonville",
+      "ping_ms": 3373.1443000015133,
+      "response_ip": "75.41.125.51"
     }
   ]
 }

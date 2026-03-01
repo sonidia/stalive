@@ -1,6 +1,7 @@
 import sys, json, requests, time, os, csv
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
+from stats import stats_collector, StatsModal
 from PySide6.QtGui     import QColor, QFont, QIcon, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout, QPainterPath, QBrush, QPixmap, QPolygon
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -655,6 +656,7 @@ class ProxyCard(QWidget):
             if elapsed >= 0:
                 self._ping_lbl.setText(f"{elapsed:.0f} ms")
                 self._proxy_dict["ping_ms"] = elapsed
+                stats_collector.record_ping(elapsed)
             # Update response IP label and persist to data.json
             ip, port = self._ip_port()
             updates: dict = {}
@@ -723,6 +725,7 @@ class ProxyCard(QWidget):
         was_auto = self._auto_refresh_pending
         self._auto_refresh_pending = False
         if resp.status_code != 200:
+            stats_collector.record_refresh_fail()
             self._status_lbl.setObjectName("statusDead")
             self._status_lbl.setText(f"✕ HTTP {resp.status_code}")
             self._status_lbl.style().unpolish(self._status_lbl)
@@ -752,6 +755,7 @@ class ProxyCard(QWidget):
                     ip, port = text.split(':', 1)
                     data = {"ip": ip.strip(), "port": port.strip()}
                 else:
+                    stats_collector.record_refresh_fail()
                     self._status_lbl.setObjectName("statusDead")
                     self._status_lbl.setText("✕ Bad format")
                     self._status_lbl.style().unpolish(self._status_lbl)
@@ -762,6 +766,7 @@ class ProxyCard(QWidget):
         except Exception as e:
             print(f"[DEBUG] Refresh parse error: {e}")
             print(f"[DEBUG] Refresh response text: {resp.text[:500]}...")
+            stats_collector.record_refresh_fail()
             self._status_lbl.setObjectName("statusDead")
             self._status_lbl.setText("✕ Bad JSON")
             self._status_lbl.style().unpolish(self._status_lbl)
@@ -778,6 +783,7 @@ class ProxyCard(QWidget):
             new_proxy = data
 
         if not new_proxy:
+            stats_collector.record_refresh_fail()
             self._status_lbl.setObjectName("statusDead")
             self._status_lbl.setText("✕ No result")
             self._status_lbl.style().unpolish(self._status_lbl)
@@ -802,6 +808,7 @@ class ProxyCard(QWidget):
         self.refreshed.emit(self, new_proxy)
 
     def _on_refresh_error(self, msg: str):
+        stats_collector.record_refresh_fail()
         self._refresh_btn.setEnabled(True)
         was_auto = self._auto_refresh_pending
         self._auto_refresh_pending = False
@@ -1394,6 +1401,21 @@ class ProxyApp(QMainWindow):
         self._export_btn.clicked.connect(self._show_export_popover)
         self._export_popover = self._make_export_popover()
 
+        self._stats_btn = QPushButton("📊 Stats")
+        self._stats_btn.setObjectName("statsBtn")
+        self._stats_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._stats_btn.setFixedHeight(26)
+        self._stats_btn.setFixedWidth(74)
+        self._stats_btn.setStyleSheet(
+            f"QPushButton {{ background: {PALETTE['entry_bg']}; color: {PALETTE['accent2']}; "
+            f"border: 1px solid {PALETTE['border']}; border-radius: 4px; "
+            f"padding: 0 8px; font-size: 8pt; }}"
+            f"QPushButton:hover {{ background: {PALETTE['panel']}; border-color: {PALETTE['accent2']}; color: #fff; }}"
+            f"QPushButton:pressed {{ background: {PALETTE['accent']}; color: #fff; }}"
+        )
+        self._stats_btn.clicked.connect(self._show_stats_modal)
+        self._stats_modal: StatsModal | None = None
+
         res_bar = QHBoxLayout()
         res_bar.setSpacing(6)
         self._res_count_lbl = QLabel("Total: 0 proxies")
@@ -1407,6 +1429,7 @@ class ProxyApp(QMainWindow):
         res_bar.addWidget(self._proxy_search)
         res_bar.addWidget(self._sort_btn)
         res_bar.addWidget(self._export_btn)
+        res_bar.addWidget(self._stats_btn)
         res_bar.addStretch()
         res_bar.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignRight)
         res_bar.addWidget(self._res_count_lbl)
@@ -1583,6 +1606,26 @@ class ProxyApp(QMainWindow):
         pos = btn.mapToGlobal(QPoint(0, btn.height() + 4))
         self._export_popover.move(pos)
         self._export_popover.show()
+
+    # ── Stats modal ──────────────────────────────────────────────────────────
+    def _get_all_proxy_cards(self) -> list:
+        """Return all ProxyCard widgets currently in the result layout."""
+        cards = []
+        for i in range(self._result_layout.count() - 1):
+            item = self._result_layout.itemAt(i)
+            if item and item.widget() and isinstance(item.widget(), ProxyCard):
+                cards.append(item.widget())
+        return cards
+
+    def _show_stats_modal(self):
+        if self._stats_modal is None or not self._stats_modal.isVisible():
+            self._stats_modal = StatsModal(
+                get_cards_fn=self._get_all_proxy_cards,
+                parent=self,
+            )
+        self._stats_modal.show()
+        self._stats_modal.raise_()
+        self._stats_modal.activateWindow()
 
     def _get_visible_proxy_dicts(self) -> list:
         """Return proxy dicts for all currently visible proxy cards."""
@@ -1990,6 +2033,7 @@ class ProxyApp(QMainWindow):
 
     def _on_card_refreshed(self, old_card: ProxyCard, new_proxy: dict):
         """Replace old card in-place with a new one after refresh."""
+        stats_collector.record_refresh_success()
         idx = self._result_layout.indexOf(old_card)
         self._result_layout.removeWidget(old_card)
         old_card.deleteLater()

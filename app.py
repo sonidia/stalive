@@ -1,8 +1,4 @@
-import sys
-import json
-import requests
-import time
-import os
+import sys, json, requests, time, os
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
 from PySide6.QtGui     import QColor, QFont, QIcon, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout, QPainterPath, QBrush, QPixmap, QPolygon
@@ -17,8 +13,7 @@ from PySide6.QtWidgets import (
 from shared import COUNTRY_DATA
 
 ALL_NETWORKS = sorted({n for d in COUNTRY_DATA.values() for n in d["networks"]})
-API_BASE     = "http://192.168.1.29"
-API_SUFFIX = ":1998/api"
+API_BASE     = "http://localhost:1998/api"
 
 if getattr(sys, 'frozen', False):
     _BUNDLE_DIR = sys._MEIPASS
@@ -57,40 +52,6 @@ def _save_app_data(data: dict):
             json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"Error saving app data: {e}")
-
-def load_api_base() -> str:
-    """Load saved API base URL from unified data file."""
-    url = _load_app_data().get("api_base", f"{API_BASE}{API_SUFFIX}")
-    # Remove /api suffix for display in input field
-    if url.endswith('/api'):
-        url = url[:-4]  # Remove '/api'
-    return url
-
-def get_api_base_for_requests() -> str:
-    """Get the full API base URL for making HTTP requests."""
-    url = _load_app_data().get("api_base", f"{API_BASE}{API_SUFFIX}")
-    # Ensure URL ends with /api for API calls
-    if not url.endswith('/api'):
-        url += '/api'
-    return url
-
-def normalize_api_base_for_requests(url: str) -> str:
-    """Normalize a URL string to ensure it ends with /api for API requests."""
-    if not url:
-        return get_api_base_for_requests()
-    # Ensure URL ends with /api
-    if not url.endswith('/api'):
-        url += '/api'
-    return url
-
-def save_api_base(url: str):
-    """Save API base URL into unified data file (preserves proxies)."""
-    # Ensure URL ends with /api for API calls
-    if not url.endswith('/api'):
-        url += '/api'
-    data = _load_app_data()
-    data["api_base"] = url
-    _save_app_data(data)
 
 def load_proxies_from_file() -> list:
     """Load proxy list from unified data file."""
@@ -313,10 +274,9 @@ def make_flag_pixmap(country_code: str, width: int = 22, height: int = 14) -> QP
     painter.end()
     return pix
 
-    """Draw a simple flag icon for the given country code."""
-    # Don't save/restore painter state as it may already be managed by caller
-    # painter.save()
 
+def draw_country_flag(painter: QPainter, country_code: str, rect: QRect):
+    """Draw a simple flag icon for the given country code into rect using painter."""
     # Flag dimensions
     flag_width = 20
     flag_height = 14
@@ -393,8 +353,6 @@ def make_flag_pixmap(country_code: str, width: int = 22, height: int = 14) -> QP
         painter.fillRect(flag_rect, QColor("#CCCCCC"))
         painter.setPen(QColor("#666666"))
         painter.drawText(flag_rect, Qt.AlignmentFlag.AlignCenter, "?")
-
-    # painter.restore()
 
 # ─── Palette ───────────────────────────────────────────────────────────────────
 C = {
@@ -680,7 +638,7 @@ QLabel#pingLabel {{
     padding: 0 2px;
 }}
 QLabel#respIpLabel {{
-    color: {C['accent2']};
+    color: {C['text']};
     font-size: 9pt;
     font-weight: 600;
     background: transparent;
@@ -1076,6 +1034,13 @@ class ProxyCard(QWidget):
         ip, port = self._ip_port()
         if not ip:
             return
+
+        # Auto-check optimisation: if already confirmed alive, skip re-ping
+        if self._auto_check_triggered and self._status_lbl.objectName() == "statusAlive":
+            self._auto_check_triggered = False
+            self.auto_check_done.emit(self)
+            return
+
         proxy_str = f"{ip}:{port}"
         self._check_btn.setEnabled(False)
         self._status_lbl.setObjectName("statusChecking")
@@ -1610,7 +1575,6 @@ class ProxyApp(QMainWindow):
         self._on_state_change("Florida")  # Manually trigger to populate city dropdown
         self._network_cb.setCurrentText("ATT")
         self._port_edit.setText("2000")
-        # Prevent auto-focus on API URL input
         self._fetch_btn.setFocus()
 
     # ── Build UI ────────────────────────────────────────────────────────────
@@ -1622,33 +1586,15 @@ class ProxyApp(QMainWindow):
         main.setContentsMargins(16, 22, 14, 20)
         main.setSpacing(0)
 
-        # ── API Base URL bar ─────────────────────────────────────────────────
+        # ── CliProxy button bar ───────────────────────────────────────────────
         api_bar = QHBoxLayout(); api_bar.setSpacing(8)
-        api_lbl = QLabel("🔗 API URL:")
-        api_lbl.setStyleSheet(f"color: {C['label']}; font-size: 9pt; font-weight: 700; background: transparent;")
-        api_lbl.setFixedWidth(72)
-        self._api_edit = QLineEdit(load_api_base())
-        self._api_edit.setPlaceholderText("http://host:port")
-        self._api_edit.setFixedHeight(34)
-        self._api_save_btn = QPushButton("💾 Save")
-        self._api_save_btn.setObjectName("clearBtn")
-        self._api_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._api_save_btn.setFixedSize(90, 36)
-        self._api_save_btn.setEnabled(False)
-        self._api_save_btn.clicked.connect(self._save_api_base_manual)
-        self._api_edit.textChanged.connect(self._on_api_url_changed)
-        self._api_edit.returnPressed.connect(self._save_api_base)
-        self._api_edit.editingFinished.connect(self._save_api_base)
-
         self._cliproxy_btn = QPushButton("Open Cliproxy")
         self._cliproxy_btn.setObjectName("cliproxyBtn")
         self._cliproxy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._cliproxy_btn.setFixedSize(120, 36)
         self._cliproxy_btn.clicked.connect(self._cliproxy_btn_clicked)
 
-        api_bar.addWidget(api_lbl)
-        api_bar.addWidget(self._api_edit, 1)
-        api_bar.addWidget(self._api_save_btn)
+        api_bar.addStretch()
         api_bar.addWidget(self._cliproxy_btn)
         main.addLayout(api_bar)
         main.addSpacing(10)
@@ -1883,20 +1829,6 @@ class ProxyApp(QMainWindow):
         cities   = cities_map.get(text.strip(), [])
         self._city_cb.set_items(cities)
 
-    # ── API Base ─────────────────────────────────────────────────────────────
-    def _on_api_url_changed(self, text: str):
-        """Enable Save button only when the URL differs from what is currently saved."""
-        current_saved = load_api_base()
-        self._api_save_btn.setEnabled(text.strip() != current_saved.strip())
-
-    def _save_api_base(self, show_status: bool = False):
-        url = self._api_edit.text().strip()
-        if not url:
-            return
-        save_api_base(url)
-        if show_status:
-            self._set_status("✓  API URL saved", C['success'])
-
     def _is_cliproxy_running(self) -> bool:
         """Return True if Cliproxy.exe process is running."""
         import subprocess
@@ -1966,23 +1898,6 @@ class ProxyApp(QMainWindow):
             # Not running — try to open it
             self._open_cliproxy()
 
-    def _save_api_base_manual(self):
-        url = self._api_edit.text().strip()
-        if not url:
-            QMessageBox.warning(self, "Invalid URL", "API URL cannot be empty.")
-            return
-        # Basic URL validation
-        if not url.startswith(('http://', 'https://')):
-            QMessageBox.warning(self, "Invalid URL", "API URL must start with http:// or https://")
-            return
-        if '://' not in url or url.count('://') != 1:
-            QMessageBox.warning(self, "Invalid URL", "Invalid URL format.")
-            return
-        save_api_base(url)
-        self._api_save_btn.setEnabled(False)
-        self._api_save_btn.setText("✓ Saved")
-        QTimer.singleShot(1000, lambda: self._api_save_btn.setText("💾 Save"))
-
     def _fetch(self):
         country = self._area_cb.current_value().upper()
         if not country:
@@ -2010,8 +1925,7 @@ class ProxyApp(QMainWindow):
         self._fetch_btn.setEnabled(False)
 
         self._thread = QThread()
-        api_base = self._api_edit.text().strip() or load_api_base()
-        self._worker = FetchWorker(params, normalize_api_base_for_requests(api_base))
+        self._worker = FetchWorker(params, API_BASE)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.finished.connect(self._handle_response)
@@ -2131,7 +2045,7 @@ class ProxyApp(QMainWindow):
         self._result_layout.insertWidget(self._result_layout.count() - 1, lbl)
 
     def _add_proxy_card(self, proxy_dict: dict):
-        card = ProxyCard(proxy_dict, lambda: normalize_api_base_for_requests(self._api_edit.text().strip() or load_api_base()))
+        card = ProxyCard(proxy_dict, lambda: API_BASE)
         card.deleted.connect(self._on_card_deleted)
         card.refreshed.connect(self._on_card_refreshed)
         card.auto_check_done.connect(self._on_auto_check_card_done)
@@ -2154,12 +2068,15 @@ class ProxyApp(QMainWindow):
         self._result_layout.removeWidget(old_card)
         old_card.deleteLater()
 
-        new_card = ProxyCard(new_proxy, lambda: normalize_api_base_for_requests(self._api_edit.text().strip() or load_api_base()))
+        new_card = ProxyCard(new_proxy, lambda: API_BASE)
         new_card.deleted.connect(self._on_card_deleted)
         new_card.refreshed.connect(self._on_card_refreshed)
         new_card.auto_check_done.connect(self._on_auto_check_card_done)
         new_card.update_button_visibility(self._auto_check_enabled)  # Set visibility for new card
         self._result_layout.insertWidget(idx, new_card)
+
+        # Immediately ping the new proxy so status is never left as N/A
+        new_card._do_check()
 
     # ── Status (thread-safe) ─────────────────────────────────────────────────
     def _set_status(self, msg: str, color: str):

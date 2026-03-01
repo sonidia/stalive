@@ -1,4 +1,4 @@
-import sys, json, requests, time, os
+import sys, json, requests, time, os, csv
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
 from PySide6.QtGui     import QColor, QFont, QIcon, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout, QPainterPath, QBrush, QPixmap, QPolygon
@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QGridLayout, QLabel, QLineEdit, QComboBox, QPushButton,
     QTextEdit, QFrame, QSizePolicy, QCompleter, QMessageBox,
     QScrollArea, QStyledItemDelegate, QStyleOptionViewItem, QStyle, QGraphicsBlurEffect,
-    QSlider
+    QSlider, QFileDialog
 )
 
 from shared import COUNTRY_DATA, PALETTE, STYLESHEET
@@ -1364,7 +1364,7 @@ class ProxyApp(QMainWindow):
         )
         self._proxy_search.textChanged.connect(self._apply_proxy_filter)
 
-        self._sort_btn = QPushButton("⇅ Sort")
+        self._sort_btn = QPushButton("📐 Sort")
         self._sort_btn.setObjectName("sortBtn")
         self._sort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._sort_btn.setFixedHeight(26)
@@ -1379,6 +1379,21 @@ class ProxyApp(QMainWindow):
         self._sort_btn.clicked.connect(self._show_sort_popover)
         self._current_sort = None   # None | 'country' | 'port' | 'ping'
 
+        self._export_btn = QPushButton("⬇ Export")
+        self._export_btn.setObjectName("exportBtn")
+        self._export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._export_btn.setFixedHeight(26)
+        self._export_btn.setFixedWidth(74)
+        self._export_btn.setStyleSheet(
+            f"QPushButton {{ background: {PALETTE['entry_bg']}; color: {PALETTE['label']}; "
+            f"border: 1px solid {PALETTE['border']}; border-radius: 4px; "
+            f"padding: 0 8px; font-size: 8pt; }}"
+            f"QPushButton:hover {{ background: {PALETTE['panel']}; border-color: {PALETTE['border_focus']}; color: {PALETTE['text']}; }}"
+            f"QPushButton:pressed {{ background: {PALETTE['accent']}; color: #fff; }}"
+        )
+        self._export_btn.clicked.connect(self._show_export_popover)
+        self._export_popover = self._make_export_popover()
+
         res_bar = QHBoxLayout()
         res_bar.setSpacing(6)
         self._res_count_lbl = QLabel("Total: 0 proxies")
@@ -1391,6 +1406,7 @@ class ProxyApp(QMainWindow):
 
         res_bar.addWidget(self._proxy_search)
         res_bar.addWidget(self._sort_btn)
+        res_bar.addWidget(self._export_btn)
         res_bar.addStretch()
         res_bar.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignRight)
         res_bar.addWidget(self._res_count_lbl)
@@ -1443,9 +1459,9 @@ class ProxyApp(QMainWindow):
         layout.setSpacing(4)
 
         options = [
-            ("country", "🌍 Sort by Country"),
-            ("port",    "🔢 Sort by Proxy Number"),
-            ("ping",    "⚡ Sort by Response Time"),
+            ("country", "🌍  Sort by Country"),
+            ("port",    "🔢  Sort by Proxy Number"),
+            ("ping",    "⚡  Sort by Response Time"),
         ]
         self._sort_action_btns = {}
         for key, label in options:
@@ -1518,7 +1534,7 @@ class ProxyApp(QMainWindow):
         self._current_sort = None
         for b in self._sort_action_btns.values():
             b.setChecked(False)
-        self._sort_btn.setText("⇅ Sort")
+        self._sort_btn.setText("📐 Sort")
         self._sort_btn.setStyleSheet(
             f"QPushButton {{ background: {PALETTE['entry_bg']}; color: {PALETTE['label']}; "
             f"border: 1px solid {PALETTE['border']}; border-radius: 4px; "
@@ -1527,6 +1543,106 @@ class ProxyApp(QMainWindow):
             f"QPushButton:pressed {{ background: {PALETTE['accent']}; color: #fff; }}"
         )
         self._rebuild_sorted_cards()
+
+    # ── Export popover ───────────────────────────────────────────────────────
+    def _make_export_popover(self) -> QWidget:
+        pop = QWidget(self, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        pop.setObjectName("sortPopover")
+        pop.setFixedWidth(210)
+        layout = QVBoxLayout(pop)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(4)
+
+        formats = [
+            ("json", "📄 Export as JSON"),
+            ("csv",  "📊 Export as CSV"),
+            ("txt",  "📝 Export as TXT"),
+        ]
+        for fmt, label in formats:
+            btn = QPushButton(label)
+            btn.setObjectName("sortOptionBtn")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(30)
+            btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {PALETTE['text']}; "
+                f"border: none; border-radius: 6px; padding: 0 10px; "
+                f"font-size: 9pt; text-align: left; }}"
+                f"QPushButton:hover {{ background: {PALETTE['accent']}; color: #fff; }}"
+            )
+            btn.clicked.connect(lambda checked, f=fmt: self._export_proxies(f))
+            layout.addWidget(btn)
+
+        pop.setStyleSheet(
+            f"QWidget#sortPopover {{ background: {PALETTE['card']}; "
+            f"border: 1.5px solid {PALETTE['border']}; border-radius: 10px; }}"
+        )
+        return pop
+
+    def _show_export_popover(self):
+        btn = self._export_btn
+        pos = btn.mapToGlobal(QPoint(0, btn.height() + 4))
+        self._export_popover.move(pos)
+        self._export_popover.show()
+
+    def _get_visible_proxy_dicts(self) -> list:
+        """Return proxy dicts for all currently visible proxy cards."""
+        proxies = []
+        for i in range(self._result_layout.count() - 1):
+            widget = self._result_layout.itemAt(i).widget()
+            if widget and isinstance(widget, ProxyCard) and widget.isVisible():
+                proxies.append(dict(widget.proxy_dict))
+        return proxies
+
+    def _export_proxies(self, fmt: str):
+        self._export_popover.hide()
+        proxies = self._get_visible_proxy_dicts()
+        if not proxies:
+            QMessageBox.information(self, "Export", "No proxies to export.")
+            return
+
+        filters = {
+            "json": "JSON Files (*.json)",
+            "csv":  "CSV Files (*.csv)",
+            "txt":  "Text Files (*.txt)",
+        }
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Proxy List", f"proxies.{fmt}", filters[fmt]
+        )
+        if not path:
+            return
+
+        try:
+            if fmt == "json":
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(proxies, f, indent=2, ensure_ascii=False)
+
+            elif fmt == "csv":
+                # Collect all keys across all proxies for header
+                all_keys = []
+                seen = set()
+                for p in proxies:
+                    for k in p:
+                        if k not in seen:
+                            all_keys.append(k)
+                            seen.add(k)
+                with open(path, "w", encoding="utf-8", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=all_keys, extrasaction="ignore")
+                    writer.writeheader()
+                    writer.writerows(proxies)
+
+            elif fmt == "txt":
+                with open(path, "w", encoding="utf-8") as f:
+                    for p in proxies:
+                        ip   = p.get("ip", p.get("host", ""))
+                        port = p.get("port", "")
+                        f.write(f"{ip}:{port}\n")
+
+            QMessageBox.information(
+                self, "Export",
+                f"Exported {len(proxies)} proxy(ies) to:\n{path}"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", str(e))
 
     def _sort_key(self, proxy_dict: dict):
         """Return a sort key for the given proxy dict based on current sort mode."""
@@ -1801,7 +1917,7 @@ class ProxyApp(QMainWindow):
         # Re-apply sort if one is active
         if self._current_sort is not None:
             self._rebuild_sorted_cards()
-        self._set_status(f"✓  Added {len(proxies_to_save)} proxy(ies)", PALETTE['success'])
+        self._set_status(f"✓ Added {len(proxies_to_save)} proxy(ies)", PALETTE['success'])
 
     def _apply_proxy_filter(self, text: str = ""):
         """Show/hide proxy cards based on search text."""

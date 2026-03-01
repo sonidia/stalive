@@ -1,3 +1,410 @@
+PALETTE = {
+    "bg":           "#0f1117",
+    "panel":        "#1a1d2e",
+    "card":         "#1e2235",
+    "accent":       "#6c63ff",
+    "accent2":      "#a78bfa",
+    "success":      "#22c55e",
+    "warning":      "#f59e0b",
+    "error":        "#f87171",
+    "text":         "#e2e8f0",
+    "subtext":      "#64748b",
+    "border":       "#2d3150",
+    "border_focus": "#6c63ff",
+    "entry_bg":     "#151728",
+    "btn_hv":       "#7c73ff",
+    "label":        "#94a3b8",
+}
+
+STYLESHEET = f"""
+QMainWindow, QWidget#central {{
+    background: {PALETTE['bg']};
+}}
+QWidget#card {{
+    background: {PALETTE['card']};
+    border: 1px solid {PALETTE['border']};
+    border-radius: 12px;
+}}
+QLabel#section {{
+    color: {PALETTE['accent2']};
+    font-weight: 700;
+    font-size: 9pt;
+    background: transparent;
+}}
+QLabel#field {{
+    color: {PALETTE['subtext']};
+    font-size: 7pt;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    background: transparent;
+}}
+QLabel {{
+    color: {PALETTE['text']};
+    background: transparent;
+}}
+QLineEdit {{
+    background: {PALETTE['entry_bg']};
+    color: {PALETTE['text']};
+    border: 1.5px solid {PALETTE['border']};
+    border-radius: 8px;
+    padding: 7px 11px;
+    font-size: 10pt;
+    selection-background-color: {PALETTE['accent']};
+}}
+QLineEdit:focus {{
+    border-color: {PALETTE['border_focus']};
+}}
+QComboBox {{
+    background: {PALETTE['entry_bg']};
+    color: {PALETTE['text']};
+    border: 1.5px solid {PALETTE['border']};
+    border-radius: 8px;
+    padding: 7px 11px;
+    font-size: 10pt;
+    selection-background-color: {PALETTE['accent']};
+}}
+QComboBox:focus {{
+    border-color: {PALETTE['border_focus']};
+}}
+QComboBox::drop-down {{
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    width: 28px;
+    border: none;
+    background: transparent;
+}}
+QComboBox::down-arrow {{
+    image: none;
+    width: 0px;
+    height: 0px;
+    border: none;
+    background: transparent;
+}}
+QComboBox QAbstractItemView {{
+    background: {PALETTE['panel']};
+    color: {PALETTE['text']};
+    border: 1.5px solid {PALETTE['border_focus']};
+    border-radius: 8px;
+    selection-background-color: {PALETTE['accent']};
+    selection-color: #fff;
+    padding: 4px;
+    outline: none;
+}}
+QComboBox QAbstractItemView::item {{
+    min-height: 28px;
+    padding: 2px 10px;
+    border-radius: 4px;
+}}
+QComboBox QAbstractItemView::item:hover {{
+    background: {PALETTE['accent']};
+    color: #fff;
+}}
+QToolTip {{
+    background: {PALETTE['panel']};
+    color: {PALETTE['text']};
+    border: 1px solid {PALETTE['border']};
+}}
+QPushButton#fetchBtn {{
+    background: {PALETTE['accent']};
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 26px;
+    font-size: 10pt;
+    font-weight: 700;
+}}
+QPushButton#fetchBtn:hover   {{ background: {PALETTE['btn_hv']}; }}
+QPushButton#fetchBtn:pressed  {{ background: #5a52e0; }}
+QPushButton#fetchBtn:disabled {{ background: {PALETTE['border']}; color: {PALETTE['subtext']}; }}
+QPushButton#clearBtn {{
+    background: {PALETTE['card']};
+    color: {PALETTE['label']};
+    border: 1.5px solid {PALETTE['border']};
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 10pt;
+    font-weight: 700;
+}}
+QPushButton#clearBtn:hover  {{ background: {PALETTE['border']}; color: {PALETTE['text']}; }}
+QPushButton#clearBtn:pressed {{ background: #252840; }}
+QPushButton#cliproxyBtn {{
+    background: {PALETTE['card']};
+    color: #e05252;
+    border: 2px solid #e05252;
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 9pt;
+    font-weight: 700;
+}}
+QPushButton#cliproxyBtn[running="true"] {{
+    border: 2px solid #4caf50;
+    color: #4caf50;
+}}
+QPushButton#cliproxyBtn:hover {{ background: {PALETTE['border']}; }}
+QPushButton#autoCheckBtn {{
+    background: {PALETTE['card']};
+    color: {PALETTE['label']};
+    border: 1.5px solid {PALETTE['border']};
+    border-right: none;
+    border-radius: 8px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    padding: 10px 18px;
+    font-size: 10pt;
+    font-weight: 700;
+}}
+QPushButton#autoCheckBtn:hover  {{ background: {PALETTE['border']}; color: {PALETTE['text']}; }}
+QPushButton#autoCheckBtn:pressed {{ background: #252840; }}
+QPushButton#autoCheckBtn:checked {{
+    background: {PALETTE['accent']};
+    color: #fff;
+    border-color: {PALETTE['accent']};
+    border-right: none;
+}}
+QPushButton#autoCheckBtn:disabled {{
+    background: {PALETTE['card']};
+    color: {PALETTE['subtext']};
+    border-color: {PALETTE['border']};
+    opacity: 0.5;
+}}
+QPushButton#timerIntervalBtn {{
+    background: {PALETTE['card']};
+    color: {PALETTE['label']};
+    border: 1.5px solid {PALETTE['border']};
+    border-radius: 8px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    padding: 0;
+    font-size: 13pt;
+}}
+QPushButton#timerIntervalBtn:hover {{ background: {PALETTE['border']}; color: {PALETTE['text']}; }}
+QPushButton#timerIntervalBtn:pressed {{ background: #252840; }}
+QPushButton#timerIntervalBtn:disabled {{ background: {PALETTE['card']}; color: {PALETTE['subtext']}; border-color: {PALETTE['border']}; }}
+QPushButton#bulkCheckBtn {{
+    background: {PALETTE['card']};
+    color: {PALETTE['label']};
+    border: 1.5px solid {PALETTE['border']};
+    border-right: none;
+    border-radius: 8px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    padding: 10px 18px;
+    font-size: 10pt;
+    font-weight: 700;
+}}
+QPushButton#bulkCheckBtn:hover  {{ background: {PALETTE['border']}; color: {PALETTE['text']}; }}
+QPushButton#bulkCheckBtn:pressed {{ background: #252840; }}
+QPushButton#bulkCheckBtn:disabled {{ background: {PALETTE['card']}; color: {PALETTE['subtext']}; border-color: {PALETTE['border']}; }}
+QPushButton#bulkRefreshBtn {{
+    background: {PALETTE['card']};
+    color: {PALETTE['label']};
+    border: 1.5px solid {PALETTE['border']};
+    border-radius: 8px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    padding: 10px 18px;
+    font-size: 10pt;
+    font-weight: 700;
+}}
+QPushButton#bulkRefreshBtn:hover  {{ background: {PALETTE['border']}; color: {PALETTE['text']}; }}
+QPushButton#bulkRefreshBtn:pressed {{ background: #252840; }}
+QPushButton#bulkRefreshBtn:disabled {{ background: {PALETTE['card']}; color: {PALETTE['subtext']}; border-color: {PALETTE['border']}; }}
+/* ── Proxy card ── */
+QWidget#proxyCard {{
+    background: {PALETTE['card']};
+    border: 1.5px solid #3d4270;
+    border-radius: 10px;
+}}
+QWidget#proxyCard:hover {{
+    border-color: {PALETTE['accent']};
+}}
+QLabel#proxyIp {{
+    color: {PALETTE['text']};
+    font-family: "Consolas", monospace;
+    font-size: 11pt;
+    font-weight: 700;
+    background: transparent;
+}}
+QLabel#proxyInfo {{
+    color: {PALETTE['subtext']};
+    font-size: 8pt;
+    background: transparent;
+}}
+QLabel#tagLabel {{
+    color: {PALETTE['subtext']};
+    font-size: 8pt;
+    font-weight: 600;
+    background: transparent;
+}}
+QWidget#tagLabel {{
+    background: transparent;
+}}
+QWidget#tagLabel QLabel {{
+    color: {PALETTE['subtext']};
+    font-size: 8pt;
+    font-weight: 600;
+    background: transparent;
+    border: none;
+}}
+QLabel#statusUnknown {{
+    color: {PALETTE['subtext']};
+    font-size: 8pt;
+    font-weight: 700;
+    background: transparent;
+    padding: 0 2px;
+}}
+QLabel#statusAlive {{
+    color: {PALETTE['success']};
+    font-size: 8pt;
+    font-weight: 700;
+    background: transparent;
+    padding: 0 2px;
+}}
+QLabel#statusDead {{
+    color: {PALETTE['error']};
+    font-size: 8pt;
+    font-weight: 700;
+    background: transparent;
+    padding: 0 2px;
+}}
+QLabel#statusChecking {{
+    color: {PALETTE['subtext']};
+    font-size: 8pt;
+    background: transparent;
+    padding: 0 2px;
+}}
+QLabel#pingLabel {{
+    color: {PALETTE['subtext']};
+    font-size: 8pt;
+    font-weight: 600;
+    background: transparent;
+    padding: 0 2px;
+}}
+QLabel#respIpLabel {{
+    color: {PALETTE['text']};
+    font-size: 9pt;
+    font-weight: 600;
+    background: transparent;
+    margin-left: 8px;
+    padding: 0 0;
+}}
+/* Card action buttons */
+QPushButton#cardRefreshBtn {{
+    background: transparent;
+    color: {PALETTE['accent']};
+    border: 1.5px solid {PALETTE['border']};
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 8pt;
+    font-weight: 700;
+    min-width: 68px;
+}}
+QPushButton#cardRefreshBtn:hover   {{ background: {PALETTE['accent']}; color: #fff; border-color: {PALETTE['accent']}; }}
+QPushButton#cardRefreshBtn:pressed  {{ background: #5a52e0; color: #fff; }}
+QPushButton#cardRefreshBtn:disabled {{ color: {PALETTE['subtext']}; border-color: {PALETTE['border']}; opacity: 0.5; }}
+QPushButton#cardCheckBtn {{
+    background: transparent;
+    color: {PALETTE['accent2']};
+    border: 1.5px solid {PALETTE['border']};
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 8pt;
+    font-weight: 700;
+    min-width: 68px;
+}}
+QPushButton#cardCheckBtn:hover   {{ background: {PALETTE['accent']}; color: #fff; border-color: {PALETTE['accent']}; }}
+QPushButton#cardCheckBtn:pressed  {{ background: #5a52e0; color: #fff; }}
+QPushButton#cardCheckBtn:disabled {{ color: {PALETTE['subtext']}; border-color: {PALETTE['border']}; }}
+QPushButton#cardDeleteBtn {{
+    background: transparent;
+    color: {PALETTE['error']};
+    border: 1.5px solid {PALETTE['border']};
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 8pt;
+    font-weight: 700;
+    min-width: 20px;
+}}
+QPushButton#cardDeleteBtn:hover   {{ background: {PALETTE['error']}; color: #fff; border-color: {PALETTE['error']}; }}
+QPushButton#cardDeleteBtn:pressed  {{ background: #d05555; color: #fff; }}
+QPushButton#cardCopyBtn {{
+    background: transparent;
+    color: {PALETTE['subtext']};
+    border: none;
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: 10pt;
+    min-width: 22px;
+    max-width: 22px;
+}}
+QPushButton#cardCopyBtn:hover   {{ color: {PALETTE['accent']}; background: {PALETTE['border']}; }}
+QPushButton#cardCopyBtn:pressed  {{ color: #fff; background: {PALETTE['accent']}; }}
+/* Result scroll area */
+QScrollArea#resultScroll {{
+    background: {PALETTE['entry_bg']};
+    border: 1px solid {PALETTE['border']};
+    border-radius: 10px;
+}}
+QScrollArea#resultScroll > QWidget > QWidget {{
+    background: {PALETTE['entry_bg']};
+    border-radius: 10px;
+}}
+QScrollBar:vertical {{
+    background: #101322;
+    width: 8px;
+    border-radius: 4px;
+    margin: 0;
+}}
+QScrollBar::handle:vertical {{
+    background: {PALETTE['border']};
+    border-radius: 4px;
+    min-height: 30px;
+}}
+QScrollBar::handle:vertical:hover {{ background: {PALETTE['accent']}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: #101322; }}
+QFrame#divider {{
+    background: {PALETTE['border']};
+    border: none;
+}}
+QLabel#badge {{
+    background: {PALETTE['accent']};
+    color: #fff;
+    border-radius: 4px;
+    padding: 1px 7px;
+    font-size: 8pt;
+    font-weight: 700;
+}}
+/* ── QMessageBox ── */
+QMessageBox {{
+    background: {PALETTE['panel']};
+}}
+QMessageBox QLabel {{
+    color: {PALETTE['text']};
+    background: transparent;
+    font-size: 10pt;
+}}
+QMessageBox QPushButton {{
+    background: {PALETTE['card']};
+    color: {PALETTE['text']};
+    border: 1.5px solid {PALETTE['border']};
+    border-radius: 6px;
+    padding: 5px 18px;
+    font-size: 9pt;
+    font-weight: 700;
+    min-width: 72px;
+}}
+QMessageBox QPushButton:hover {{
+    background: {PALETTE['accent']};
+    color: #fff;
+    border-color: {PALETTE['accent']};
+}}
+QMessageBox QPushButton:pressed {{
+    background: #5a52e0;
+    color: #fff;
+}}
+"""
+
 COUNTRY_DATA = {
     "US": {
         "states":   [

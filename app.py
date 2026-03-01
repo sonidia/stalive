@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QSlider
 )
 
-from shared import COUNTRY_DATA
+from shared import COUNTRY_DATA, PALETTE, STYLESHEET
 
 ALL_NETWORKS = sorted({n for d in COUNTRY_DATA.values() for n in d["networks"]})
 API_BASE     = "http://localhost:1998/api"
@@ -353,415 +353,6 @@ def draw_country_flag(painter: QPainter, country_code: str, rect: QRect):
         painter.fillRect(flag_rect, QColor("#CCCCCC"))
         painter.setPen(QColor("#666666"))
         painter.drawText(flag_rect, Qt.AlignmentFlag.AlignCenter, "?")
-
-# ─── Palette ───────────────────────────────────────────────────────────────────
-C = {
-    "bg":           "#0f1117",
-    "panel":        "#1a1d2e",
-    "card":         "#1e2235",
-    "accent":       "#6c63ff",
-    "accent2":      "#a78bfa",
-    "success":      "#22c55e",
-    "error":        "#f87171",
-    "text":         "#e2e8f0",
-    "subtext":      "#64748b",
-    "border":       "#2d3150",
-    "border_focus": "#6c63ff",
-    "entry_bg":     "#151728",
-    "btn_hv":       "#7c73ff",
-    "label":        "#94a3b8",
-}
-
-# ─── Global stylesheet ─────────────────────────────────────────────────────────
-STYLESHEET = f"""
-QMainWindow, QWidget#central {{
-    background: {C['bg']};
-}}
-QWidget#card {{
-    background: {C['card']};
-    border: 1px solid {C['border']};
-    border-radius: 12px;
-}}
-QLabel#section {{
-    color: {C['accent2']};
-    font-weight: 700;
-    font-size: 9pt;
-    background: transparent;
-}}
-QLabel#field {{
-    color: {C['subtext']};
-    font-size: 7pt;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    background: transparent;
-}}
-QLabel {{
-    color: {C['text']};
-    background: transparent;
-}}
-QLineEdit {{
-    background: {C['entry_bg']};
-    color: {C['text']};
-    border: 1.5px solid {C['border']};
-    border-radius: 8px;
-    padding: 7px 11px;
-    font-size: 10pt;
-    selection-background-color: {C['accent']};
-}}
-QLineEdit:focus {{
-    border-color: {C['border_focus']};
-}}
-QComboBox {{
-    background: {C['entry_bg']};
-    color: {C['text']};
-    border: 1.5px solid {C['border']};
-    border-radius: 8px;
-    padding: 7px 11px;
-    font-size: 10pt;
-    selection-background-color: {C['accent']};
-}}
-QComboBox:focus {{
-    border-color: {C['border_focus']};
-}}
-QComboBox::drop-down {{
-    subcontrol-origin: padding;
-    subcontrol-position: center right;
-    width: 28px;
-    border: none;
-    background: transparent;
-}}
-QComboBox::down-arrow {{
-    image: none;
-    width: 0px;
-    height: 0px;
-    border: none;
-    background: transparent;
-}}
-QComboBox QAbstractItemView {{
-    background: {C['panel']};
-    color: {C['text']};
-    border: 1.5px solid {C['border_focus']};
-    border-radius: 8px;
-    selection-background-color: {C['accent']};
-    selection-color: #fff;
-    padding: 4px;
-    outline: none;
-}}
-QComboBox QAbstractItemView::item {{
-    min-height: 28px;
-    padding: 2px 10px;
-    border-radius: 4px;
-}}
-QComboBox QAbstractItemView::item:hover {{
-    background: {C['accent']};
-    color: #fff;
-}}
-QToolTip {{
-    background: {C['panel']};
-    color: {C['text']};
-    border: 1px solid {C['border']};
-}}
-QPushButton#fetchBtn {{
-    background: {C['accent']};
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 26px;
-    font-size: 10pt;
-    font-weight: 700;
-}}
-QPushButton#fetchBtn:hover   {{ background: {C['btn_hv']}; }}
-QPushButton#fetchBtn:pressed  {{ background: #5a52e0; }}
-QPushButton#fetchBtn:disabled {{ background: {C['border']}; color: {C['subtext']}; }}
-QPushButton#clearBtn {{
-    background: {C['card']};
-    color: {C['label']};
-    border: 1.5px solid {C['border']};
-    border-radius: 8px;
-    padding: 10px 18px;
-    font-size: 10pt;
-    font-weight: 700;
-}}
-QPushButton#clearBtn:hover  {{ background: {C['border']}; color: {C['text']}; }}
-QPushButton#clearBtn:pressed {{ background: #252840; }}
-QPushButton#cliproxyBtn {{
-    background: {C['card']};
-    color: #e05252;
-    border: 2px solid #e05252;
-    border-radius: 8px;
-    padding: 4px 10px;
-    font-size: 9pt;
-    font-weight: 700;
-}}
-QPushButton#cliproxyBtn[running="true"] {{
-    border: 2px solid #4caf50;
-    color: #4caf50;
-}}
-QPushButton#cliproxyBtn:hover {{ background: {C['border']}; }}
-QPushButton#autoCheckBtn {{
-    background: {C['card']};
-    color: {C['label']};
-    border: 1.5px solid {C['border']};
-    border-right: none;
-    border-radius: 8px;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    padding: 10px 18px;
-    font-size: 10pt;
-    font-weight: 700;
-}}
-QPushButton#autoCheckBtn:hover  {{ background: {C['border']}; color: {C['text']}; }}
-QPushButton#autoCheckBtn:pressed {{ background: #252840; }}
-QPushButton#autoCheckBtn:checked {{
-    background: {C['accent']};
-    color: #fff;
-    border-color: {C['accent']};
-    border-right: none;
-}}
-QPushButton#autoCheckBtn:disabled {{
-    background: {C['card']};
-    color: {C['subtext']};
-    border-color: {C['border']};
-    opacity: 0.5;
-}}
-QPushButton#timerIntervalBtn {{
-    background: {C['card']};
-    color: {C['label']};
-    border: 1.5px solid {C['border']};
-    border-radius: 8px;
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    padding: 0;
-    font-size: 13pt;
-}}
-QPushButton#timerIntervalBtn:hover {{ background: {C['border']}; color: {C['text']}; }}
-QPushButton#timerIntervalBtn:pressed {{ background: #252840; }}
-QPushButton#timerIntervalBtn:disabled {{ background: {C['card']}; color: {C['subtext']}; border-color: {C['border']}; }}
-QPushButton#bulkCheckBtn {{
-    background: {C['card']};
-    color: {C['label']};
-    border: 1.5px solid {C['border']};
-    border-right: none;
-    border-radius: 8px;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    padding: 10px 18px;
-    font-size: 10pt;
-    font-weight: 700;
-}}
-QPushButton#bulkCheckBtn:hover  {{ background: {C['border']}; color: {C['text']}; }}
-QPushButton#bulkCheckBtn:pressed {{ background: #252840; }}
-QPushButton#bulkCheckBtn:disabled {{ background: {C['card']}; color: {C['subtext']}; border-color: {C['border']}; }}
-QPushButton#bulkRefreshBtn {{
-    background: {C['card']};
-    color: {C['label']};
-    border: 1.5px solid {C['border']};
-    border-radius: 8px;
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    padding: 10px 18px;
-    font-size: 10pt;
-    font-weight: 700;
-}}
-QPushButton#bulkRefreshBtn:hover  {{ background: {C['border']}; color: {C['text']}; }}
-QPushButton#bulkRefreshBtn:pressed {{ background: #252840; }}
-QPushButton#bulkRefreshBtn:disabled {{ background: {C['card']}; color: {C['subtext']}; border-color: {C['border']}; }}
-/* ── Proxy card ── */
-QWidget#proxyCard {{
-    background: {C['card']};
-    border: 1.5px solid #3d4270;
-    border-radius: 10px;
-}}
-QWidget#proxyCard:hover {{
-    border-color: {C['accent']};
-}}
-QLabel#proxyIp {{
-    color: {C['text']};
-    font-family: "Consolas", monospace;
-    font-size: 11pt;
-    font-weight: 700;
-    background: transparent;
-}}
-QLabel#proxyInfo {{
-    color: {C['subtext']};
-    font-size: 8pt;
-    background: transparent;
-}}
-QLabel#tagLabel {{
-    color: {C['subtext']};
-    font-size: 8pt;
-    font-weight: 600;
-    background: transparent;
-}}
-QWidget#tagLabel {{
-    background: transparent;
-}}
-QWidget#tagLabel QLabel {{
-    color: {C['subtext']};
-    font-size: 8pt;
-    font-weight: 600;
-    background: transparent;
-    border: none;
-}}
-QLabel#statusUnknown {{
-    color: {C['subtext']};
-    font-size: 8pt;
-    font-weight: 700;
-    background: transparent;
-    padding: 0 2px;
-}}
-QLabel#statusAlive {{
-    color: {C['success']};
-    font-size: 8pt;
-    font-weight: 700;
-    background: transparent;
-    padding: 0 2px;
-}}
-QLabel#statusDead {{
-    color: {C['error']};
-    font-size: 8pt;
-    font-weight: 700;
-    background: transparent;
-    padding: 0 2px;
-}}
-QLabel#statusChecking {{
-    color: {C['subtext']};
-    font-size: 8pt;
-    background: transparent;
-    padding: 0 2px;
-}}
-QLabel#pingLabel {{
-    color: {C['subtext']};
-    font-size: 8pt;
-    font-weight: 600;
-    background: transparent;
-    padding: 0 2px;
-}}
-QLabel#respIpLabel {{
-    color: {C['text']};
-    font-size: 9pt;
-    font-weight: 600;
-    background: transparent;
-    margin-left: 8px;
-    padding: 0 0;
-}}
-/* Card action buttons */
-QPushButton#cardRefreshBtn {{
-    background: transparent;
-    color: {C['accent']};
-    border: 1.5px solid {C['border']};
-    border-radius: 6px;
-    padding: 3px 10px;
-    font-size: 8pt;
-    font-weight: 700;
-    min-width: 68px;
-}}
-QPushButton#cardRefreshBtn:hover   {{ background: {C['accent']}; color: #fff; border-color: {C['accent']}; }}
-QPushButton#cardRefreshBtn:pressed  {{ background: #5a52e0; color: #fff; }}
-QPushButton#cardRefreshBtn:disabled {{ color: {C['subtext']}; border-color: {C['border']}; opacity: 0.5; }}
-QPushButton#cardCheckBtn {{
-    background: transparent;
-    color: {C['accent2']};
-    border: 1.5px solid {C['border']};
-    border-radius: 6px;
-    padding: 3px 10px;
-    font-size: 8pt;
-    font-weight: 700;
-    min-width: 68px;
-}}
-QPushButton#cardCheckBtn:hover   {{ background: {C['accent']}; color: #fff; border-color: {C['accent']}; }}
-QPushButton#cardCheckBtn:pressed  {{ background: #5a52e0; color: #fff; }}
-QPushButton#cardCheckBtn:disabled {{ color: {C['subtext']}; border-color: {C['border']}; }}
-QPushButton#cardDeleteBtn {{
-    background: transparent;
-    color: {C['error']};
-    border: 1.5px solid {C['border']};
-    border-radius: 6px;
-    padding: 3px 10px;
-    font-size: 8pt;
-    font-weight: 700;
-    min-width: 20px;
-}}
-QPushButton#cardDeleteBtn:hover   {{ background: {C['error']}; color: #fff; border-color: {C['error']}; }}
-QPushButton#cardDeleteBtn:pressed  {{ background: #d05555; color: #fff; }}
-QPushButton#cardCopyBtn {{
-    background: transparent;
-    color: {C['subtext']};
-    border: none;
-    border-radius: 4px;
-    padding: 2px 4px;
-    font-size: 10pt;
-    min-width: 22px;
-    max-width: 22px;
-}}
-QPushButton#cardCopyBtn:hover   {{ color: {C['accent']}; background: {C['border']}; }}
-QPushButton#cardCopyBtn:pressed  {{ color: #fff; background: {C['accent']}; }}
-/* Result scroll area */
-QScrollArea#resultScroll {{
-    background: {C['entry_bg']};
-    border: 1px solid {C['border']};
-    border-radius: 10px;
-}}
-QScrollArea#resultScroll > QWidget > QWidget {{
-    background: {C['entry_bg']};
-    border-radius: 10px;
-}}
-QScrollBar:vertical {{
-    background: #101322;
-    width: 8px;
-    border-radius: 4px;
-    margin: 0;
-}}
-QScrollBar::handle:vertical {{
-    background: {C['border']};
-    border-radius: 4px;
-    min-height: 30px;
-}}
-QScrollBar::handle:vertical:hover {{ background: {C['accent']}; }}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: #101322; }}
-QFrame#divider {{
-    background: {C['border']};
-    border: none;
-}}
-QLabel#badge {{
-    background: {C['accent']};
-    color: #fff;
-    border-radius: 4px;
-    padding: 1px 7px;
-    font-size: 8pt;
-    font-weight: 700;
-}}
-/* ── QMessageBox ── */
-QMessageBox {{
-    background: {C['panel']};
-}}
-QMessageBox QLabel {{
-    color: {C['text']};
-    background: transparent;
-    font-size: 10pt;
-}}
-QMessageBox QPushButton {{
-    background: {C['card']};
-    color: {C['text']};
-    border: 1.5px solid {C['border']};
-    border-radius: 6px;
-    padding: 5px 18px;
-    font-size: 9pt;
-    font-weight: 700;
-    min-width: 72px;
-}}
-QMessageBox QPushButton:hover {{
-    background: {C['accent']};
-    color: #fff;
-    border-color: {C['accent']};
-}}
-QMessageBox QPushButton:pressed {{
-    background: #5a52e0;
-    color: #fff;
-}}
-"""
-
 
 # ─── Worker thread ──────────────────────────────────────────────────────────────
 class FetchWorker(QObject):
@@ -1229,7 +820,7 @@ class HighlightDelegate(QStyledItemDelegate):
     def __init__(self, combo_box, parent=None):
         super().__init__(parent)
         self.combo_box = combo_box
-        self.highlight_color = QColor(C['accent'])
+        self.highlight_color = QColor(PALETTE['accent'])
         self.match_text = ""
 
     def set_match_text(self, text: str):
@@ -1301,7 +892,7 @@ class HighlightDelegate(QStyledItemDelegate):
 
             if is_selected:
                 # Draw check mark on default background
-                painter.setPen(QColor(C['accent']))
+                painter.setPen(QColor(PALETTE['accent']))
                 painter.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
                 painter.drawText(option.rect.adjusted(0, 0, -10, 0),
                                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
@@ -1311,11 +902,11 @@ class AutoComboBox(QComboBox):
 
     POPUP_STYLE = f"""
         QAbstractItemView {{
-            background: {C['panel']};
-            color: {C['text']};
-            border: 1.5px solid {C['border_focus']};
+            background: {PALETTE['panel']};
+            color: {PALETTE['text']};
+            border: 1.5px solid {PALETTE['border_focus']};
             border-radius: 8px;
-            selection-background-color: {C['accent']};
+            selection-background-color: {PALETTE['accent']};
             selection-color: #fff;
             padding: 4px;
             outline: none;
@@ -1326,7 +917,7 @@ class AutoComboBox(QComboBox):
             border-radius: 4px;
         }}
         QAbstractItemView::item:hover {{
-            background: {C['accent']};
+            background: {PALETTE['accent']};
             color: #fff;
         }}
     """
@@ -1359,7 +950,7 @@ class AutoComboBox(QComboBox):
         # Custom arrow label
         self._arrow = QLabel("▼", self)
         self._arrow.setStyleSheet(f"""
-            color: {C['text']};
+            color: {PALETTE['text']};
             font-size: 12pt;
             font-weight: bold;
             background: transparent;
@@ -1404,6 +995,8 @@ class AutoComboBox(QComboBox):
 class BlurOverlay(QWidget):
     """Semi-transparent overlay that blocks mouse events on the content beneath it."""
 
+    btn_clicked = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
@@ -1411,19 +1004,34 @@ class BlurOverlay(QWidget):
         self.setObjectName("blurOverlay")
         self.hide()
 
+        # ── Centered content: warning label + Open CliProxy button ────────────
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(16)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self._lbl = QLabel(
+            "⚠ CliProxy is not running\nPlease open CliProxy to use the app"
+        )
+        self._lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._lbl.setStyleSheet(
+            "color: rgba(148,163,184,200); font-family: 'Segoe UI'; "
+            "font-size: 10pt; background: transparent;"
+        )
+        layout.addWidget(self._lbl)
+
+        self.btn = QPushButton("Open CliProxy")
+        self.btn.setObjectName("cliproxyBtn")
+        self.btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn.setFixedSize(120, 36)
+        self.btn.clicked.connect(self.btn_clicked)
+        layout.addWidget(self.btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         # Dark semi-transparent overlay
         painter.fillRect(self.rect(), QColor(15, 17, 23, 170))
-        # Small hint text
-        painter.setPen(QColor(148, 163, 184, 200))
-        painter.setFont(QFont("Segoe UI", 10))
-        painter.drawText(
-            self.rect(),
-            Qt.AlignmentFlag.AlignCenter,
-            "⚠  Cliproxy is not running\nPlease open Cliproxy to use the app",
-        )
         painter.end()
 
     def mousePressEvent(self, event):
@@ -1477,34 +1085,34 @@ class TimerPopover(QWidget):
 
         self.setStyleSheet(f"""
             QWidget#timerPopover {{
-                background: {C['card']};
-                border: 1.5px solid {C['border']};
+                background: {PALETTE['card']};
+                border: 1.5px solid {PALETTE['border']};
                 border-radius: 10px;
             }}
             QLabel#timerPopoverLbl {{
-                color: {C['label']};
+                color: {PALETTE['label']};
                 font-size: 9pt;
                 font-weight: 700;
                 background: transparent;
             }}
             QLabel#timerPopoverVal {{
-                color: {C['accent']};
+                color: {PALETTE['accent']};
                 font-size: 9pt;
                 font-weight: 700;
                 background: transparent;
             }}
             QLabel#timerPopoverRange {{
-                color: {C['subtext']};
+                color: {PALETTE['subtext']};
                 font-size: 7pt;
                 background: transparent;
             }}
             QSlider::groove:horizontal {{
                 height: 4px;
-                background: {C['border']};
+                background: {PALETTE['border']};
                 border-radius: 2px;
             }}
             QSlider::handle:horizontal {{
-                background: {C['accent']};
+                background: {PALETTE['accent']};
                 border: none;
                 width: 14px;
                 height: 14px;
@@ -1512,7 +1120,7 @@ class TimerPopover(QWidget):
                 border-radius: 7px;
             }}
             QSlider::sub-page:horizontal {{
-                background: {C['accent']};
+                background: {PALETTE['accent']};
                 border-radius: 2px;
             }}
         """)
@@ -1534,7 +1142,7 @@ class ProxyApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Proxer - Auto rotate proxies from Cliproxy")
+        self.setWindowTitle("Proxer - Auto rotate proxies from CliProxy")
         self.setFixedSize(760, 720)
         self._status_sig.connect(self._apply_status)
         self._auto_check_enabled = False
@@ -1585,19 +1193,6 @@ class ProxyApp(QMainWindow):
         main = QVBoxLayout(root)
         main.setContentsMargins(16, 22, 14, 20)
         main.setSpacing(0)
-
-        # ── CliProxy button bar ───────────────────────────────────────────────
-        api_bar = QHBoxLayout(); api_bar.setSpacing(8)
-        self._cliproxy_btn = QPushButton("Open Cliproxy")
-        self._cliproxy_btn.setObjectName("cliproxyBtn")
-        self._cliproxy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._cliproxy_btn.setFixedSize(120, 36)
-        self._cliproxy_btn.clicked.connect(self._cliproxy_btn_clicked)
-
-        api_bar.addStretch()
-        api_bar.addWidget(self._cliproxy_btn)
-        main.addLayout(api_bar)
-        main.addSpacing(10)
 
         # ── Cliproxy status auto-refresh timer ───────────────────────────────
         self._cliproxy_timer = QTimer(self)
@@ -1701,9 +1296,9 @@ class ProxyApp(QMainWindow):
         auto_check_layout.setContentsMargins(10, 0, 0, 0)
         auto_check_layout.setSpacing(0)
         self._auto_check_label = QLabel("⏰ Auto rotate:")
-        self._auto_check_label.setStyleSheet(f"color: {C['label']}; background: transparent;")
+        self._auto_check_label.setStyleSheet(f"color: {PALETTE['label']}; background: transparent;")
         self._auto_check_status = QLabel("OFF")
-        self._auto_check_status.setStyleSheet(f"color: {C['subtext']}; background: transparent;")
+        self._auto_check_status.setStyleSheet(f"color: {PALETTE['subtext']}; background: transparent;")
         auto_check_layout.addWidget(self._auto_check_label)
         auto_check_layout.addSpacing(3)
         auto_check_layout.addWidget(self._auto_check_status)
@@ -1757,18 +1352,32 @@ class ProxyApp(QMainWindow):
         content_layout.addSpacing(12)
 
         # ── Result section ────────────────────────────────────────────────────
+        self._proxy_search = QLineEdit()
+        self._proxy_search.setPlaceholderText("🔍  Search proxies...")
+        self._proxy_search.setFixedHeight(26)
+        self._proxy_search.setMaximumWidth(200)
+        self._proxy_search.setStyleSheet(
+            f"QLineEdit {{ background: {PALETTE['entry_bg']}; color: {PALETTE['text']}; "
+            f"border: 1px solid {PALETTE['border']}; border-radius: 4px; "
+            f"padding: 0 8px; font-size: 8pt; }}"
+            f"QLineEdit:focus {{ border-color: {PALETTE['border_focus']}; }}"
+        )
+        self._proxy_search.textChanged.connect(self._apply_proxy_filter)
+
         res_bar = QHBoxLayout()
-        self._res_count_lbl = QLabel("0 proxies")
+        res_bar.setSpacing(8)
+        self._res_count_lbl = QLabel("Total: 0 proxies")
         self._res_count_lbl.setStyleSheet(
-            f"color: {C['accent2']}; font-size: 8pt; font-weight: 700; background: transparent;")
+            f"color: {PALETTE['accent2']}; font-size: 8pt; font-weight: 700; background: transparent;")
 
         self._status_lbl = QLabel("")
         self._status_lbl.setStyleSheet(
-            f"color: {C['subtext']}; font-size: 8pt; background: transparent;")
+            f"color: {PALETTE['subtext']}; font-size: 8pt; background: transparent;")
 
-        res_bar.addWidget(self._res_count_lbl)
+        res_bar.addWidget(self._proxy_search)
         res_bar.addStretch()
         res_bar.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignRight)
+        res_bar.addWidget(self._res_count_lbl)
         content_layout.addLayout(res_bar)
         content_layout.addSpacing(4)
 
@@ -1779,7 +1388,7 @@ class ProxyApp(QMainWindow):
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self._result_container = QWidget()
-        self._result_container.setStyleSheet(f"background: {C['entry_bg']};")
+        self._result_container.setStyleSheet(f"background: {PALETTE['entry_bg']};")
         self._result_layout = QVBoxLayout(self._result_container)
         self._result_layout.setContentsMargins(10, 10, 10, 10)
         self._result_layout.setSpacing(8)
@@ -1792,6 +1401,8 @@ class ProxyApp(QMainWindow):
 
         # ── Blur overlay (sibling of content_widget inside root) ─────────────
         self._blur_overlay = BlurOverlay(root)
+        self._cliproxy_btn = self._blur_overlay.btn
+        self._blur_overlay.btn_clicked.connect(self._cliproxy_btn_clicked)
         self._blur_effect = QGraphicsBlurEffect()
         self._blur_effect.setBlurRadius(8)
         self._content_widget.setGraphicsEffect(self._blur_effect)
@@ -1854,6 +1465,8 @@ class ProxyApp(QMainWindow):
         self._cliproxy_btn.style().unpolish(self._cliproxy_btn)
         self._cliproxy_btn.style().polish(self._cliproxy_btn)
         self._apply_cliproxy_lock(running)
+        # Update auto check button state based on Cliproxy status
+        self._update_auto_check_btn_state()
 
     def _apply_cliproxy_lock(self, running: bool):
         """Blur + disable content area when Cliproxy is not running."""
@@ -1871,6 +1484,8 @@ class ProxyApp(QMainWindow):
             self._blur_overlay.setGeometry(cw.geometry())
             self._blur_overlay.raise_()
             self._blur_overlay.show()
+            # Defer geometry update to ensure proper sizing after layout
+            QTimer.singleShot(0, lambda: self._blur_overlay.setGeometry(cw.geometry()))
 
     def _check_cliproxy_silent(self):
         """Auto-check called by timer — updates button only, no status bar."""
@@ -1885,7 +1500,7 @@ class ProxyApp(QMainWindow):
                 creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
                 shell=False,
             )
-            self._set_status("⏳  Opening CliProxy...", C['label'])
+            self._set_status("⏳  Opening CliProxy...", PALETTE['label'])
         except Exception as e:
             self._set_status(f"✖  Cannot open CliProxy: {e}", "#e05252")
 
@@ -1893,7 +1508,7 @@ class ProxyApp(QMainWindow):
         """Called when user clicks the CliProxy button."""
         if self._is_cliproxy_running():
             # Already running — just update status bar info
-            self._set_status("✔  CliProxy is already running", C['success'])
+            self._set_status("✔  CliProxy is already running", PALETTE['success'])
         else:
             # Not running — try to open it
             self._open_cliproxy()
@@ -1921,7 +1536,7 @@ class ProxyApp(QMainWindow):
         # Stash form params so they can be embedded into the saved proxy dict
         self._last_fetch_params = params
 
-        self._set_status("⏳ Fetching…", C['subtext'])
+        self._set_status("⏳ Fetching…", PALETTE['subtext'])
         self._fetch_btn.setEnabled(False)
 
         self._thread = QThread()
@@ -1940,7 +1555,7 @@ class ProxyApp(QMainWindow):
         content_type = resp.headers.get('content-type', '').lower()
 
         if code == 200:
-            self._set_status(f"✓  {code} OK", C['success'])
+            self._set_status(f"✓  {code} OK", PALETTE['success'])
             try:
                 text = resp.text.strip()
                 data = None
@@ -1970,7 +1585,7 @@ class ProxyApp(QMainWindow):
 
                 if data is None:
                     self._add_info_row(f"Unexpected response: {text[:200]}")
-                    self._set_status("⚠  Unexpected format", C['subtext'])
+                    self._set_status("⚠  Unexpected format", PALETTE['subtext'])
                     return
 
                 self._render_json(data, resp.url)
@@ -1978,15 +1593,15 @@ class ProxyApp(QMainWindow):
                 print(f"[DEBUG] Parse error: {e}")
                 print(f"[DEBUG] Response text: {resp.text[:500]}...")
                 self._add_info_row(f"Parse error: {str(e)[:100]}...")
-                self._set_status("✗  Parse error", C['error'])
+                self._set_status("✗  Parse error", PALETTE['error'])
         else:
             print(f"[DEBUG] HTTP {code} error: {resp.text[:500]}...")
             self._add_info_row(f"HTTP {code}: {resp.text[:200]}...", is_error=True)
-            self._set_status(f"✗  HTTP {code}", C['error'])
+            self._set_status(f"✗  HTTP {code}", PALETTE['error'])
 
     def _show_error(self, msg: str):
         self._fetch_btn.setEnabled(True)
-        self._set_status(f"✗  {msg}", C['error'])
+        self._set_status(f"✗  {msg}", PALETTE['error'])
 
     # ── Result rendering ─────────────────────────────────────────────────────
     def _clear_rows(self):
@@ -2009,7 +1624,7 @@ class ProxyApp(QMainWindow):
             proxies_to_save.append(data)
 
         if not proxies_to_save:
-            self._set_status("⚠  No proxy in response", C['subtext'])
+            self._set_status("⚠  No proxy in response", PALETTE['subtext'])
             return
 
         # Embed form params as metadata into each proxy dict before saving
@@ -2023,7 +1638,39 @@ class ProxyApp(QMainWindow):
         save_proxies_to_file(proxies_to_save)
         # Reload full list so UI is consistent with cache
         self._load_cached_proxies()
-        self._set_status(f"✓  Added {len(proxies_to_save)} proxy(ies)", C['success'])
+        self._set_status(f"✓  Added {len(proxies_to_save)} proxy(ies)", PALETTE['success'])
+
+    def _apply_proxy_filter(self, text: str = ""):
+        """Show/hide proxy cards based on search text."""
+        q = text.strip().lower()
+        visible = 0
+        total = 0
+        for i in range(self._result_layout.count() - 1):  # exclude trailing stretch
+            widget = self._result_layout.itemAt(i).widget()
+            if widget is None or not isinstance(widget, ProxyCard):
+                continue
+            total += 1
+            if not q:
+                widget.show()
+                visible += 1
+            else:
+                d = widget.proxy_dict
+                haystack = " ".join(str(v) for v in [
+                    d.get("ip", d.get("host", "")),
+                    d.get("port", ""),
+                    d.get("country", ""),
+                    d.get("state", ""),
+                    d.get("city", ""),
+                    d.get("isp", d.get("network", "")),
+                ]).lower()
+                match = q in haystack
+                widget.setVisible(match)
+                if match:
+                    visible += 1
+        if q and total:
+            self._res_count_lbl.setText(f"Total: {visible}/{total} proxies")
+        else:
+            self._res_count_lbl.setText(f"Total: {total} proxies")
 
     def _load_cached_proxies(self):
         """Load and display cached proxies."""
@@ -2032,15 +1679,15 @@ class ProxyApp(QMainWindow):
         if cached:
             for proxy in cached:
                 self._add_proxy_card(proxy)
-        # Update result header count
-        self._res_count_lbl.setText(f"{len(cached)} proxies")
+        # Re-apply current search filter (also updates count label)
+        self._apply_proxy_filter(self._proxy_search.text())
         self._update_auto_check_btn_state(len(cached))
 
     def _add_info_row(self, text: str, color: str = None, is_error: bool = False):
         lbl = QLabel(text)
         lbl.setObjectName("proxyText")
         lbl.setWordWrap(True)
-        c = color or (C['error'] if is_error else C['subtext'])
+        c = color or (PALETTE['error'] if is_error else PALETTE['subtext'])
         lbl.setStyleSheet(f"color: {c}; font-size: 9pt; background: transparent; padding: 4px 8px;")
         self._result_layout.insertWidget(self._result_layout.count() - 1, lbl)
 
@@ -2057,9 +1704,9 @@ class ProxyApp(QMainWindow):
     def _on_card_deleted(self, card: ProxyCard):
         self._result_layout.removeWidget(card)
         card.deleteLater()
-        # Update count
+        # Update count via filter (keeps search active)
         count = self._result_layout.count() - 1  # exclude stretch
-        self._res_count_lbl.setText(f"{count} proxies")
+        self._apply_proxy_filter(self._proxy_search.text())
         self._update_auto_check_btn_state(count)
 
     def _on_card_refreshed(self, old_card: ProxyCard, new_proxy: dict):
@@ -2097,6 +1744,10 @@ class ProxyApp(QMainWindow):
 
     def _toggle_auto_check(self):
         """Toggle automatic proxy checking."""
+        if not self._is_cliproxy_running():
+            # Prevent enabling auto check if Cliproxy is not running
+            self._set_status("⚠ Auto check requires CliProxy to be running", PALETTE['warning'])
+            return
         self._auto_check_enabled = not self._auto_check_enabled
         if self._auto_check_enabled:
             self._auto_check_pending = 0
@@ -2104,7 +1755,7 @@ class ProxyApp(QMainWindow):
             self._countdown_remaining = self._auto_check_interval
             self._countdown_timer.start(1000)  # Update every second
             self._auto_check_status.setText("ON")
-            self._auto_check_status.setStyleSheet(f"color: {C['success']}; background: transparent;")
+            self._auto_check_status.setStyleSheet(f"color: {PALETTE['success']}; background: transparent;")
             self._auto_check_btn.setProperty("checked", True)
             self._update_countdown_display()
         else:
@@ -2112,9 +1763,9 @@ class ProxyApp(QMainWindow):
             self._auto_check_timer.stop()
             self._countdown_timer.stop()
             self._auto_check_status.setText("OFF")
-            self._auto_check_status.setStyleSheet(f"color: {C['subtext']}; background: transparent;")
+            self._auto_check_status.setStyleSheet(f"color: {PALETTE['subtext']}; background: transparent;")
             self._auto_check_btn.setProperty("checked", False)
-            self._set_status("", C['subtext'])  # Clear countdown display
+            self._set_status("", PALETTE['subtext'])  # Clear countdown display
         # Show/hide bulk buttons and stretch fetch button accordingly
         self._bulk_widget.setVisible(not self._auto_check_enabled)
 
@@ -2136,10 +1787,10 @@ class ProxyApp(QMainWindow):
         """Update the countdown display in status label."""
         if self._auto_check_enabled:
             self._status_lbl.setText(f"⏰ Next check in {self._countdown_remaining}s")
-            self._status_lbl.setStyleSheet(f"color: {C['accent']}; font-size: 8pt; background: transparent;")
+            self._status_lbl.setStyleSheet(f"color: {PALETTE['accent']}; font-size: 8pt; background: transparent;")
         else:
             self._status_lbl.setText("")
-            self._status_lbl.setStyleSheet(f"color: {C['subtext']}; font-size: 8pt; background: transparent;")
+            self._status_lbl.setStyleSheet(f"color: {PALETTE['subtext']}; font-size: 8pt; background: transparent;")
 
     def _update_all_proxy_cards_visibility(self):
         """Update button visibility on all proxy cards based on auto-check state."""
@@ -2173,21 +1824,23 @@ class ProxyApp(QMainWindow):
             self._update_countdown_display()
 
     def _update_auto_check_btn_state(self, count: int = None):
-        """Enable/disable the Auto Check button based on whether there are proxy cards."""
+        """Enable/disable the Auto Check button based on whether there are proxy cards and Cliproxy is running."""
         if count is None:
             count = self._result_layout.count() - 1  # exclude stretch
         has_proxies = count > 0
-        self._auto_check_btn.setEnabled(has_proxies)
-        self._timer_interval_btn.setEnabled(has_proxies)
-        self._bulk_check_btn.setEnabled(has_proxies)
-        self._bulk_refresh_btn.setEnabled(has_proxies)
-        if not has_proxies and self._auto_check_enabled:
-            # Turn off auto check if list becomes empty
+        cliproxy_running = self._is_cliproxy_running()
+        enabled = has_proxies and cliproxy_running
+        self._auto_check_btn.setEnabled(enabled)
+        self._timer_interval_btn.setEnabled(enabled)
+        self._bulk_check_btn.setEnabled(enabled)
+        self._bulk_refresh_btn.setEnabled(enabled)
+        if not enabled and self._auto_check_enabled:
+            # Turn off auto check if list becomes empty or Cliproxy stops running
             self._auto_check_enabled = False
             self._auto_check_timer.stop()
             self._countdown_timer.stop()
             self._auto_check_status.setText("OFF")
-            self._auto_check_status.setStyleSheet(f"color: {C['subtext']}; background: transparent;")
+            self._auto_check_status.setStyleSheet(f"color: {PALETTE['subtext']}; background: transparent;")
             self._auto_check_btn.setProperty("checked", False)
             self._auto_check_btn.style().unpolish(self._auto_check_btn)
             self._auto_check_btn.style().polish(self._auto_check_btn)
@@ -2198,7 +1851,7 @@ class ProxyApp(QMainWindow):
         # Stop countdown while we are processing (restart after all done)
         self._countdown_timer.stop()
         self._status_lbl.setText("⚡ Checking…")
-        self._status_lbl.setStyleSheet(f"color: {C['accent2']}; font-size: 8pt; background: transparent;")
+        self._status_lbl.setStyleSheet(f"color: {PALETTE['accent2']}; font-size: 8pt; background: transparent;")
 
         # Iterate through all widgets in the result layout
         count = self._result_layout.count()
@@ -2254,7 +1907,7 @@ class ProxyApp(QMainWindow):
                     widget._do_check()
                     checked += 1
         if checked:
-            self._set_status(f"⚡ Checking {checked} proxies…", C['accent2'])
+            self._set_status(f"⚡ Checking {checked} proxies…", PALETTE['accent2'])
 
     def _bulk_refresh(self):
         """Refresh all proxy cards at once."""
@@ -2270,7 +1923,7 @@ class ProxyApp(QMainWindow):
                     widget._do_refresh()
                     refreshed += 1
         if refreshed:
-            self._set_status(f"↻ Refreshing {refreshed} proxies…", C['accent2'])
+            self._set_status(f"↻ Refreshing {refreshed} proxies…", PALETTE['accent2'])
 
     def _clear_cache(self):
         """Wipe all saved proxies and clear the result view."""
@@ -2288,8 +1941,9 @@ class ProxyApp(QMainWindow):
         except Exception as e:
             print(f"Error clearing cache: {e}")
         self._clear_rows()
+        self._proxy_search.clear()
         self._res_count_lbl.setText("0 proxies")
-        self._set_status("🗑  Cache cleared", C['subtext'])
+        self._set_status("🗑  Cache cleared", PALETTE['subtext'])
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -1,15 +1,24 @@
 {
   "proxies": [
     {
-      "ip": "74.98.247.139",
+      "port": "2000",
+      "country": "US",
+      "state": "Florida",
+      "city": "Jacksonville",
+      "isp": "ATT",
+      "_city": "Jacksonville",
+      "ping_ms": 1738.6597000004258,
+      "response_ip": "107.202.233.36"
+    },
+    {
       "port": "20004",
       "country": "US",
-      "state": "Pennsylvania",
-      "city": "Pittsburgh",
+      "state": "Maryland",
+      "city": "Silver Spring",
       "isp": "Verizon Business",
-      "_city": "Pittsburgh",
-      "ping_ms": 1164.6,
-      "response_ip": "74.98.247.139"
+      "_city": "Silver Spring",
+      "ping_ms": 1447.3,
+      "response_ip": "108.28.51.163"
     }
   ]
 }

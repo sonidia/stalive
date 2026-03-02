@@ -557,7 +557,7 @@ class ProxyCard(QWidget):
         return self._proxy_dict
 
     def _ip_port(self) -> tuple:
-        ip   = self._proxy_dict.get("ip",   self._proxy_dict.get("host", ""))
+        ip   = self._proxy_dict.get("ip",   self._proxy_dict.get("host", "")) or current_ipv4()
         port = self._proxy_dict.get("port", "")
         return ip, str(port)
 
@@ -592,6 +592,14 @@ class ProxyCard(QWidget):
         self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._copy_btn.setFixedHeight(24)
         ip_copy_layout.addWidget(self._copy_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self._response_ip_lbl = QLabel()
+        response_ip = self._proxy_dict.get("response_ip")
+        if response_ip:
+            self._response_ip_lbl.setText(f" → {response_ip}")
+            self._response_ip_lbl.setObjectName("responseIp")
+            self._response_ip_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            ip_copy_layout.addWidget(self._response_ip_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # No longer need the response IP label since main label now shows the actual proxy IP
         ip_copy_layout.addStretch()
@@ -724,9 +732,8 @@ class ProxyCard(QWidget):
         # Update proxy dict in memory
         if origin_ip:
             self._proxy_dict["response_ip"] = origin_ip
-            # Update the main IP label to show the actual proxy IP
-            _, port = self._ip_port()
-            self._ip_lbl.setText(f"{origin_ip}:{port}")
+            # Update response IP label
+            self._response_ip_lbl.setText(f" → {origin_ip}")
         if country_code:
             self._proxy_dict["country"] = country_code
         if region_name:
@@ -872,9 +879,8 @@ class ProxyCard(QWidget):
                 updates["ping_ms"] = elapsed
             if response_ip:
                 self._proxy_dict["response_ip"] = response_ip
-                # Update main IP label to show actual proxy IP
-                _, port = self._ip_port()
-                self._ip_lbl.setText(f"{response_ip}:{port}")
+                # Update response IP label
+                self._response_ip_lbl.setText(f" → {response_ip}")
                 updates["response_ip"] = response_ip
             if updates:
                 update_proxy_in_file(ip, port, updates)
@@ -883,9 +889,9 @@ class ProxyCard(QWidget):
             if was_auto:
                 self.auto_check_done.emit(self)  # Notify: cycle done, proxy is alive
         else:
-            self._status_lbl.setObjectName("statusDead")
-            self._status_lbl.setText("✕ Dead")
-            self._ping_lbl.setText("")
+            self._status_lbl.setObjectName("statusUnknown")
+            self._status_lbl.setText("● Unknown")
+            self._ping_lbl.setText("0 ms")
             # Auto-refresh if this check was triggered automatically
             if self._auto_check_triggered:
                 self._auto_check_triggered = False  # Reset flag
@@ -1359,7 +1365,7 @@ class ProxyApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Proxer - Auto rotate proxies from CliProxy")
-        self.setFixedSize(840, 720)
+        self.setFixedSize(840, 744)
         self._status_sig.connect(self._apply_status)
         self._auto_check_enabled = False
         self._auto_check_interval = 60
@@ -1410,7 +1416,7 @@ class ProxyApp(QMainWindow):
         root.setObjectName("central")
         self.setCentralWidget(root)
         main = QVBoxLayout(root)
-        main.setContentsMargins(16, 22, 14, 20)
+        main.setContentsMargins(16, 22, 14, 10)
         main.setSpacing(0)
 
         # ── Cliproxy status auto-refresh timer ───────────────────────────────
@@ -1497,8 +1503,7 @@ class ProxyApp(QMainWindow):
         self._geo_check_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._geo_check_btn.setFixedHeight(36)
         self._geo_check_btn.setToolTip(
-            "Ping the port entered above, then look up geo info (country, state, city, ISP) "
-            "for the resolved IP using ip-api.com"
+            "Ping by target port"
         )
         self._geo_check_btn.clicked.connect(self._do_geo_check)
 
@@ -1507,6 +1512,9 @@ class ProxyApp(QMainWindow):
         self._fetch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._fetch_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._fetch_btn.setFixedHeight(36)
+        self._fetch_btn.setToolTip(
+            "Fetch new proxy for the selected options"
+        )
         self._fetch_btn.clicked.connect(self._fetch)
 
         self._clear_cache_btn = QPushButton("🗑 Reset")
@@ -1514,6 +1522,9 @@ class ProxyApp(QMainWindow):
         self._clear_cache_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._clear_cache_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._clear_cache_btn.setFixedHeight(36)
+        self._clear_cache_btn.setToolTip(
+            "Clear all saved proxies and stats"
+        )
         self._clear_cache_btn.clicked.connect(self._clear_cache)
 
         self._auto_check_btn = QPushButton()
@@ -1547,6 +1558,9 @@ class ProxyApp(QMainWindow):
         self._bulk_check_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._bulk_check_btn.setFixedHeight(36)
         self._bulk_check_btn.setEnabled(False)
+        self._bulk_check_btn.setToolTip(
+            "Check status of all proxies"
+        )
         self._bulk_check_btn.clicked.connect(self._bulk_check)
 
         self._bulk_refresh_btn = QPushButton("🔄️ Bulk refresh")
@@ -1555,6 +1569,9 @@ class ProxyApp(QMainWindow):
         self._bulk_refresh_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._bulk_refresh_btn.setFixedHeight(36)
         self._bulk_refresh_btn.setEnabled(False)
+        self._bulk_refresh_btn.setToolTip(
+            "Refresh new ones for all proxies"
+        )
         self._bulk_refresh_btn.clicked.connect(self._bulk_refresh)
 
         self._bulk_widget = QWidget()
@@ -1565,8 +1582,14 @@ class ProxyApp(QMainWindow):
         bulk_layout.addWidget(self._bulk_check_btn)
         bulk_layout.addWidget(self._bulk_refresh_btn)
 
-        act.addWidget(self._geo_check_btn, 1)
-        act.addWidget(self._fetch_btn, 2)
+        geo_fetch_widget = QWidget()
+        geo_fetch_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        geo_fetch_layout = QHBoxLayout(geo_fetch_widget)
+        geo_fetch_layout.setSpacing(0)
+        geo_fetch_layout.setContentsMargins(0, 0, 0, 0)
+        geo_fetch_layout.addWidget(self._geo_check_btn, 1)
+        geo_fetch_layout.addWidget(self._fetch_btn, 2)
+        act.addWidget(geo_fetch_widget, 3)
         act.addWidget(self._clear_cache_btn, 1)
         act.addWidget(self._bulk_widget, 2)
 
@@ -1671,7 +1694,6 @@ class ProxyApp(QMainWindow):
         res_bar.addWidget(self._export_btn)
         res_bar.addWidget(self._stats_btn)
         res_bar.addStretch()
-        res_bar.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignRight)
         res_bar.addWidget(self._res_count_lbl)
         content_layout.addLayout(res_bar)
         content_layout.addSpacing(4)
@@ -1693,6 +1715,13 @@ class ProxyApp(QMainWindow):
         content_layout.addWidget(self._scroll, 1)
 
         main.addWidget(self._content_widget, 1)
+
+        # ── Footer status bar ─────────────────────────────────────────────────
+        footer = QHBoxLayout()
+        footer.setContentsMargins(4, 0, 4, 0)
+        footer.addWidget(self._status_lbl)
+        footer.addStretch()
+        main.addLayout(footer)
 
         # ── Blur overlay (sibling of content_widget inside root) ─────────────
         self._blur_overlay = BlurOverlay(root)
@@ -2201,7 +2230,6 @@ class ProxyApp(QMainWindow):
         if not found:
             # No existing card — create a new one
             proxy_dict = {
-                "ip":      origin_ip,
                 "port":    port_str,
                 "country": country_code,
                 "state":   region_name,
@@ -2353,7 +2381,7 @@ class ProxyApp(QMainWindow):
 
     def _show_error(self, msg: str):
         self._fetch_btn.setEnabled(True)
-        self._set_status(f"✗  {msg}", PALETTE['error'])
+        self._set_status(f"✗ {msg}", PALETTE['error'])
 
     # ── Result rendering ─────────────────────────────────────────────────────
     def _clear_rows(self):
@@ -2455,6 +2483,9 @@ class ProxyApp(QMainWindow):
         self._result_layout.insertWidget(self._result_layout.count() - 1, card)
         count = self._result_layout.count() - 1  # exclude stretch
         self._update_auto_check_btn_state(count)
+        # Auto-check status for new proxies without ping data
+        if not proxy_dict.get("ping_ms"):
+            card._do_check()
 
     def _on_card_deleted(self, card: ProxyCard):
         self._result_layout.removeWidget(card)

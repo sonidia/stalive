@@ -108,7 +108,10 @@ QPushButton#fetchBtn {{
     background: {PALETTE['accent']};
     color: #fff;
     border: none;
-    border-radius: 8px;
+    border-top-left-radius: 0px;
+    border-bottom-left-radius: 0px;
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
     padding: 10px 26px;
     font-size: 10pt;
     font-weight: 700;
@@ -119,7 +122,10 @@ QPushButton#fetchBtn:disabled {{ background: {PALETTE['border']}; color: {PALETT
 QPushButton#geoCheckBtn {{
     color: #38bdf8;
     border: 1.5px solid {PALETTE['border']};
-    border-radius: 8px;
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-top-right-radius: 0px;
+    border-bottom-right-radius: 0px;
     padding: 10px 14px;
     font-size: 10pt;
     font-weight: 700;

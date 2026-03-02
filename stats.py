@@ -1,7 +1,3 @@
-"""
-stats.py — Thống kê & Phân tích Proxy
-Chứa: StatsCollector (singleton), PingChartWidget, StatsModal
-"""
 from __future__ import annotations
 
 import time
@@ -18,7 +14,6 @@ from PySide6.QtWidgets import (
 )
 
 from shared import PALETTE
-
 
 # ─── Stats Collector ──────────────────────────────────────────────────────────
 
@@ -108,7 +103,7 @@ class PingChartWidget(QWidget):
             painter.drawText(
                 self.rect(),
                 Qt.AlignmentFlag.AlignCenter,
-                "Chưa có dữ liệu ping\n(hãy Check proxy để bắt đầu)",
+                "Not enough data\n(please check proxy to start)",
             )
             painter.end()
             return
@@ -266,32 +261,18 @@ def _make_stat_card(
     lay.addWidget(sub_lbl)
 
     return card
-
-
-# ─── Stats Modal ──────────────────────────────────────────────────────────────
-
 class StatsModal(QDialog):
-    """
-    Modal hiển thị Thống Kê & Phân Tích:
-      - Tỷ lệ proxy sống / chết
-      - Ping trung bình
-      - Số lần refresh thành công
-      - Biểu đồ ping theo thời gian
-    """
-
     def __init__(self, get_cards_fn: Callable, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._get_cards_fn = get_cards_fn
-        self.setWindowTitle("Thống Kê & Phân Tích")
-        self.setFixedSize(580, 540)
+        self.setWindowTitle("Statistics & Analysis")
+        self.setFixedSize(580, 520)
         self.setWindowFlags(
             Qt.WindowType.Dialog |
             Qt.WindowType.FramelessWindowHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self._build()
-
-    # ── Build UI ──────────────────────────────────────────────────────────
 
     def _build(self) -> None:
         outer = QVBoxLayout(self)
@@ -317,7 +298,7 @@ class StatsModal(QDialog):
         hdr = QHBoxLayout()
         hdr.setSpacing(8)
 
-        title_lbl = QLabel("📊  Thống Kê & Phân Tích")
+        title_lbl = QLabel("📊 Statistics & Analysis")
         title_lbl.setStyleSheet(
             f"color: {PALETTE['text']}; font-size: 12pt;"
             f" font-weight: 700; background: transparent;"
@@ -326,7 +307,7 @@ class StatsModal(QDialog):
         hdr.addStretch()
 
         refresh_btn = QPushButton("↻")
-        refresh_btn.setToolTip("Làm mới số liệu")
+        refresh_btn.setToolTip("Refresh statistics")
         refresh_btn.setFixedSize(28, 28)
         refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         refresh_btn.setStyleSheet(
@@ -371,13 +352,13 @@ class StatsModal(QDialog):
 
         # ── Stat cards row ─────────────────────────────────────────────────
         self._alive_card   = _make_stat_card(
-            "PROXY SỐNG / CHẾT", "—", "", PALETTE["success"]
+            "ALIVE / DEAD PROXIES", "—", "", PALETTE["success"]
         )
         self._ping_card    = _make_stat_card(
-            "PING TRUNG BÌNH",   "—", "milliseconds", PALETTE["warning"]
+            "AVERAGE PING",   "—", "milliseconds", PALETTE["warning"]
         )
         self._refresh_card = _make_stat_card(
-            "REFRESH THÀNH CÔNG", "—", "", PALETTE["accent2"]
+            "SUCCESSFUL REFRESHES", "—", "", PALETTE["accent2"]
         )
 
         cards_row = QHBoxLayout()
@@ -387,7 +368,7 @@ class StatsModal(QDialog):
         lay.addLayout(cards_row)
 
         # ── Chart section ──────────────────────────────────────────────────
-        chart_title = QLabel("BIỂU ĐỒ PING THEO THỜI GIAN")
+        chart_title = QLabel("PING CHART OVER TIME")
         chart_title.setStyleSheet(
             f"color: {PALETTE['subtext']}; font-size: 7.5pt; font-weight: 700;"
             f" letter-spacing: 0.5px; background: transparent;"
@@ -415,10 +396,7 @@ class StatsModal(QDialog):
     def _sub_lbl(card: QWidget) -> QLabel | None:
         return card.findChild(QLabel, "statSub")
 
-    # ── Refresh stats ─────────────────────────────────────────────────────
-
     def _refresh_stats(self) -> None:
-        """Tính toán lại và cập nhật tất cả số liệu."""
         collector = stats_collector
         cards = self._get_cards_fn()
 
@@ -483,7 +461,7 @@ class StatsModal(QDialog):
             ref_val.setText(str(ok))
         if ref_sub:
             ref_sub.setText(
-                f"{fail} thất bại  •  tổng {total_ref}" if total_ref > 0 else "Chưa có refresh"
+                f"{fail} failed  •  total {total_ref}" if total_ref > 0 else "No refresh data"
             )
 
         # ── Chart ──
@@ -492,13 +470,13 @@ class StatsModal(QDialog):
         # ── Footer ──
         n = len(collector.ping_history)
         self._footer_lbl.setText(
-            f"Dữ liệu từ {n} lần ping"
-            if n else "Chưa có dữ liệu — hãy Check proxy để bắt đầu"
+            f"Data from {n} ping(s)"
+            if n else "No data — please check proxy to start"
         )
 
     # ── Events ────────────────────────────────────────────────────────────
 
-    def showEvent(self, event) -> None:  # noqa: N802
+    def showEvent(self, event) -> None:
         super().showEvent(event)
         self._refresh_stats()
         # Center on parent window
@@ -509,7 +487,7 @@ class StatsModal(QDialog):
                 p.y() + (p.height() - self.height()) // 2,
             )
 
-    def keyPressEvent(self, event) -> None:  # noqa: N802
+    def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:
             self.close()
         else:

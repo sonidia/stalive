@@ -2,6 +2,7 @@ import sys, json, requests, time, os, csv
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
 from stats import stats_collector, StatsModal
+from ping import PingModal
 from PySide6.QtGui     import QColor, QFont, QIcon, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout, QPainterPath, QBrush, QPixmap, QPolygon
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -1158,6 +1159,7 @@ class ProxyApp(QMainWindow):
         self._auto_check_timer.setSingleShot(True)   # fire once; restarted manually after cycle
         self._auto_check_timer.timeout.connect(self._auto_check_all_proxies)
         self._countdown_timer = QTimer()
+        self._initial_cliproxy_check_done = False
         self._countdown_timer.timeout.connect(self._update_countdown)
         self._countdown_remaining = self._auto_check_interval
         self._auto_check_pending = 0   # number of cards still being processed in current cycle
@@ -1416,6 +1418,21 @@ class ProxyApp(QMainWindow):
         self._stats_btn.clicked.connect(self._show_stats_modal)
         self._stats_modal: StatsModal | None = None
 
+        self._ping_btn = QPushButton("🏓 Ping")
+        self._ping_btn.setObjectName("pingBtn")
+        self._ping_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ping_btn.setFixedHeight(26)
+        self._ping_btn.setFixedWidth(68)
+        self._ping_btn.setStyleSheet(
+            f"QPushButton {{ background: {PALETTE['entry_bg']}; color: {PALETTE['success']}; "
+            f"border: 1px solid {PALETTE['border']}; border-radius: 4px; "
+            f"padding: 0 8px; font-size: 8pt; }}"
+            f"QPushButton:hover {{ background: {PALETTE['panel']}; border-color: {PALETTE['success']}; color: #fff; }}"
+            f"QPushButton:pressed {{ background: {PALETTE['success']}; color: #fff; }}"
+        )
+        self._ping_btn.clicked.connect(self._show_ping_modal)
+        self._ping_modal: PingModal | None = None
+
         res_bar = QHBoxLayout()
         res_bar.setSpacing(6)
         self._res_count_lbl = QLabel("Total: 0 proxies")
@@ -1426,6 +1443,7 @@ class ProxyApp(QMainWindow):
         self._status_lbl.setStyleSheet(
             f"color: {PALETTE['subtext']}; font-size: 8pt; background: transparent;")
 
+        res_bar.addWidget(self._ping_btn)
         res_bar.addWidget(self._proxy_search)
         res_bar.addWidget(self._sort_btn)
         res_bar.addWidget(self._export_btn)
@@ -1627,6 +1645,13 @@ class ProxyApp(QMainWindow):
         self._stats_modal.raise_()
         self._stats_modal.activateWindow()
 
+    def _show_ping_modal(self):
+        if self._ping_modal is None or not self._ping_modal.isVisible():
+            self._ping_modal = PingModal(parent=self)
+        self._ping_modal.show()
+        self._ping_modal.raise_()
+        self._ping_modal.activateWindow()
+
     def _get_visible_proxy_dicts(self) -> list:
         """Return proxy dicts for all currently visible proxy cards."""
         proxies = []
@@ -1784,6 +1809,25 @@ class ProxyApp(QMainWindow):
         self._cliproxy_btn.style().unpolish(self._cliproxy_btn)
         self._cliproxy_btn.style().polish(self._cliproxy_btn)
         self._apply_cliproxy_lock(running)
+
+        # Auto-enable auto check on initial check if CliProxy is running
+        if running and not self._initial_cliproxy_check_done:
+            self._initial_cliproxy_check_done = True
+            self._auto_check_enabled = True
+            self._auto_check_pending = 0
+            self._auto_check_status.setText("ON")
+            self._auto_check_status.setStyleSheet(f"color: {PALETTE['success']}; background: transparent;")
+            self._auto_check_btn.setProperty("checked", True)
+            self._auto_check_btn.style().unpolish(self._auto_check_btn)
+            self._auto_check_btn.style().polish(self._auto_check_btn)
+            self._update_all_proxy_cards_visibility()
+            # Start the auto check timer if there are proxies
+            if self._result_layout.count() > 1:  # exclude stretch
+                self._auto_check_timer.start(self._auto_check_interval * 1000)
+                self._countdown_remaining = self._auto_check_interval
+                self._countdown_timer.start(1000)  # Update every second
+                self._update_countdown_display()
+
         # Update auto check button state based on Cliproxy status
         self._update_auto_check_btn_state()
 
@@ -1820,6 +1864,8 @@ class ProxyApp(QMainWindow):
                 shell=False,
             )
             self._set_status("⏳  Opening CliProxy...", PALETTE['label'])
+            # Check status after 3 seconds to see if CliProxy started successfully
+            QTimer.singleShot(3000, self._check_cliproxy_status_after_open)
         except Exception as e:
             self._set_status(f"✖  Cannot open CliProxy: {e}", "#e05252")
 
@@ -1831,6 +1877,13 @@ class ProxyApp(QMainWindow):
         else:
             # Not running — try to open it
             self._open_cliproxy()
+
+    def _check_cliproxy_status_after_open(self):
+        """Check CliProxy status after attempting to open it and update status bar."""
+        if self._is_cliproxy_running():
+            self._set_status("✔  CliProxy opened successfully", PALETTE['success'])
+        else:
+            self._set_status("✖  CliProxy failed to open or is not responding", "#e05252")
 
     def _fetch(self):
         country = self._area_cb.current_value().upper()

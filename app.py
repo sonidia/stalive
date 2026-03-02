@@ -1,4 +1,4 @@
-import sys, json, requests, time, os, csv
+import sys, json, requests, time, os, csv, socket
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
 from stats import stats_collector, StatsModal
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from shared import COUNTRY_DATA, PALETTE, STYLESHEET
+from utils import current_ipv4
 
 ALL_NETWORKS = sorted({n for d in COUNTRY_DATA.values() for n in d["networks"]})
 API_BASE     = "http://localhost:1998/api"
@@ -431,6 +432,104 @@ class RefreshWorker(QObject):
             self.error.emit(str(exc))
 
 
+# ─── Port pre-check worker (ping TCP before fetching from API) ─────────────────
+class PortPreCheckWorker(QObject):
+    """Check whether a TCP port is alive before fetching from the API.
+
+    Signals:
+        result(alive: bool, elapsed_ms: float, peer_ip: str, host: str, port: int)
+    """
+    result = Signal(bool, float, str, str, int)
+
+    def __init__(self, host: str, port: int, timeout: float = 5.0):
+        super().__init__()
+        self._host    = host
+        self._port    = port
+        self._timeout = timeout
+
+    def run(self):
+        t0 = time.monotonic()
+        try:
+            with socket.create_connection((self._host, self._port),
+                                          timeout=self._timeout) as sock:
+                elapsed  = (time.monotonic() - t0) * 1000
+                peer_ip  = sock.getpeername()[0]
+                self.result.emit(True, elapsed, peer_ip, self._host, self._port)
+        except Exception:
+            elapsed = (time.monotonic() - t0) * 1000
+            self.result.emit(False, elapsed, "", self._host, self._port)
+
+
+# ─── Geo-check worker: Ping proxy then query ip-api.com ──────────────────
+class GeoCheckWorker(QObject):
+    """
+    1. Ping proxy by sending request through it to httpbin.org/ip
+    2. Extract origin IP from response
+    3. Call http://ip-api.com/json/<IP> to retrieve geo info.
+
+    Signals
+    -------
+    result(alive, elapsed_ms, origin_ip, country, country_code,
+           region_name, city, isp, error)
+    """
+    result = Signal(bool, float, str, str, str, str, str, str, str)
+
+    TEST_URL = "http://httpbin.org/ip"
+    GEO_URL  = "http://ip-api.com/json/{ip}?fields=status,country,countryCode,regionName,city,isp,query"
+    TIMEOUT  = 10.0
+
+    def __init__(self, proxy_str: str):
+        super().__init__()
+        self._proxy = proxy_str   # "ip:port"
+
+    def run(self):
+        # ── Step 1: Ping proxy (same as ProxyCheckWorker) ─────────────────
+        try:
+            proxies = {
+                "http":  f"http://{self._proxy}",
+                "https": f"http://{self._proxy}",
+            }
+            t0 = time.monotonic()
+            resp = requests.get(self.TEST_URL, proxies=proxies, timeout=self.TIMEOUT)
+            elapsed = (time.monotonic() - t0) * 1000
+            if resp.status_code == 200:
+                try:
+                    origin = resp.json().get("origin", "")
+                except Exception:
+                    origin = ""
+                if not origin:
+                    self.result.emit(False, elapsed, "", "", "", "", "", "", "No origin IP in response")
+                    return
+            else:
+                self.result.emit(False, elapsed, "", "", "", "", "", "", f"HTTP {resp.status_code}")
+                return
+        except Exception as exc:
+            elapsed = (time.monotonic() - t0) * 1000 if 't0' in locals() else 0.0
+            self.result.emit(False, elapsed, "", "", "", "", "", "", str(exc))
+            return
+
+        # ── Step 2: Geo lookup ─────────────────────────────────────────────
+        try:
+            geo_resp = requests.get(
+                self.GEO_URL.format(ip=origin),
+                timeout=self.TIMEOUT,
+            )
+            geo = geo_resp.json() if geo_resp.status_code == 200 else {}
+        except Exception:
+            geo = {}
+
+        country      = geo.get("country",     "")
+        country_code = geo.get("countryCode", "")
+        region_name  = geo.get("regionName",  "")
+        city         = geo.get("city",        "")
+        isp          = geo.get("isp",         "")
+
+        self.result.emit(
+            True, elapsed, origin,
+            country, country_code, region_name, city, isp, "",
+        )
+
+
 # ─── Proxy Card widget ─────────────────────────────────────────────────────────
 class ProxyCard(QWidget):
     """A rich card widget representing one cached proxy entry."""
@@ -464,7 +563,9 @@ class ProxyCard(QWidget):
 
     def _build(self):
         ip, port = self._ip_port()
-        proxy_str = f"{ip}:{port}" if ip else "unknown"
+        # Use response_ip if available (machine's actual proxy IP), otherwise use configured IP
+        display_ip = current_ipv4()
+        proxy_str = f"{display_ip}:{port}" if display_ip else "unknown"
 
         # ── Outer: single HBox — left info col | stretch | status col | buttons ──
         outer = QHBoxLayout(self)
@@ -492,12 +593,7 @@ class ProxyCard(QWidget):
         self._copy_btn.setFixedHeight(24)
         ip_copy_layout.addWidget(self._copy_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        saved_resp_ip = self._proxy_dict.get("response_ip", "")
-        self._resp_ip_lbl = QLabel(f"→ {saved_resp_ip}" if saved_resp_ip else "")
-        self._resp_ip_lbl.setObjectName("respIpLabel")
-        self._resp_ip_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        ip_copy_layout.addWidget(self._resp_ip_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
-
+        # No longer need the response IP label since main label now shows the actual proxy IP
         ip_copy_layout.addStretch()
 
         left_col.addLayout(ip_copy_layout)
@@ -558,8 +654,22 @@ class ProxyCard(QWidget):
         status_col.setSpacing(4)
         status_col.setContentsMargins(0, 0, 0, 0)
 
-        self._status_lbl = QLabel("● Status: N/A")
-        self._status_lbl.setObjectName("statusUnknown")
+        # Determine initial status based on available data
+        saved_ping = self._proxy_dict.get("ping_ms", None)
+        has_response_ip = bool(self._proxy_dict.get("response_ip", ""))
+
+        if saved_ping is not None:
+            status_text = "● Alive"
+            status_object_name = "statusAlive"
+        elif has_response_ip:
+            status_text = "● Checked"
+            status_object_name = "statusAlive"
+        else:
+            status_text = "● Unknown"
+            status_object_name = "statusUnknown"
+
+        self._status_lbl = QLabel(status_text)
+        self._status_lbl.setObjectName(status_object_name)
         status_col.addWidget(self._status_lbl, 0, Qt.AlignmentFlag.AlignRight)
 
         saved_ping = self._proxy_dict.get("ping_ms", None)
@@ -600,6 +710,103 @@ class ProxyCard(QWidget):
         # Hide check and refresh buttons when auto-check is enabled
         self._check_btn.setVisible(not auto_check_enabled)
         self._refresh_btn.setVisible(not auto_check_enabled)
+
+    def update_geo_data(
+        self,
+        elapsed_ms: float,
+        origin_ip: str,
+        country_code: str,
+        region_name: str,
+        city: str,
+        isp: str,
+    ):
+        """Update this card's geo data and refresh the UI display."""
+        # Update proxy dict in memory
+        if origin_ip:
+            self._proxy_dict["response_ip"] = origin_ip
+            # Update the main IP label to show the actual proxy IP
+            _, port = self._ip_port()
+            self._ip_lbl.setText(f"{origin_ip}:{port}")
+        if country_code:
+            self._proxy_dict["country"] = country_code
+        if region_name:
+            self._proxy_dict["state"] = region_name
+        if city:
+            self._proxy_dict["city"] = city
+            self._proxy_dict["_city"] = city
+        if isp:
+            self._proxy_dict["isp"] = isp
+        self._proxy_dict["ping_ms"] = round(elapsed_ms, 1)
+
+        # Update status and ping display
+        self._status_lbl.setObjectName("statusAlive")
+        self._status_lbl.setText("● Alive")
+        self._ping_lbl.setText(f"{elapsed_ms:.0f} ms")
+
+        self._status_lbl.style().unpolish(self._status_lbl)
+        self._status_lbl.style().polish(self._status_lbl)
+
+    def _rebuild_tags(self):
+        """Rebuild the tags row widget from current _proxy_dict values."""
+        # Find the tags layout (second item in left_col, which is in outer layout[0])
+        outer_layout = self.layout()
+        left_col_layout = outer_layout.itemAt(0).layout()
+        if not left_col_layout:
+            return
+        tags_layout_item = left_col_layout.itemAt(1)
+        if not tags_layout_item:
+            return
+        tags_layout = tags_layout_item.layout()
+        if not tags_layout:
+            return
+
+        # Clear existing tag widgets
+        while tags_layout.count() > 0:
+            item = tags_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        # Re-add tags
+        meta_fields = [
+            ("country", "🌍"),
+            ("state",   "- 📍"),
+            ("city",    "- 🏙️"),
+            ("isp",     "- 📡"),
+        ]
+        has_tag = False
+        for key, icon in meta_fields:
+            val = self._proxy_dict.get(key, "")
+            if val and str(val).strip():
+                if key == "country":
+                    # Wrap flag image + country code in a single container tag
+                    country_container = QWidget()
+                    country_container.setObjectName("tagLabel")
+                    c_layout = QHBoxLayout(country_container)
+                    c_layout.setContentsMargins(0, 0, 0, 0)
+                    c_layout.setSpacing(4)
+                    flag_lbl = QLabel()
+                    flag_lbl.setPixmap(make_flag_pixmap(str(val).upper()))
+                    flag_lbl.setFixedSize(19, 11)
+                    flag_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    c_layout.addWidget(flag_lbl)
+                    code_lbl = QLabel(val)
+                    c_layout.addWidget(code_lbl)
+                    tags_layout.addWidget(country_container, 0, Qt.AlignmentFlag.AlignVCenter)
+                else:
+                    tag = QLabel(f"{icon} {val}")
+                    tag.setObjectName("tagLabel")
+                    tags_layout.addWidget(tag)
+                has_tag = True
+
+        if not has_tag:
+            for k, v in self._proxy_dict.items():
+                if k in ("ip", "host") or not v:
+                    continue
+                tag = QLabel(f"{k}: {v}")
+                tag.setObjectName("tagLabel")
+                tags_layout.addWidget(tag)
+
+        tags_layout.addStretch()
 
     # ── Copy ──
     def _do_copy(self):
@@ -664,8 +871,10 @@ class ProxyCard(QWidget):
             if elapsed >= 0:
                 updates["ping_ms"] = elapsed
             if response_ip:
-                self._resp_ip_lbl.setText(f"→ {response_ip}")
                 self._proxy_dict["response_ip"] = response_ip
+                # Update main IP label to show actual proxy IP
+                _, port = self._ip_port()
+                self._ip_lbl.setText(f"{response_ip}:{port}")
                 updates["response_ip"] = response_ip
             if updates:
                 update_proxy_in_file(ip, port, updates)
@@ -677,7 +886,6 @@ class ProxyCard(QWidget):
             self._status_lbl.setObjectName("statusDead")
             self._status_lbl.setText("✕ Dead")
             self._ping_lbl.setText("")
-            self._resp_ip_lbl.setText("")
             # Auto-refresh if this check was triggered automatically
             if self._auto_check_triggered:
                 self._auto_check_triggered = False  # Reset flag
@@ -1151,7 +1359,7 @@ class ProxyApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Proxer - Auto rotate proxies from CliProxy")
-        self.setFixedSize(760, 720)
+        self.setFixedSize(840, 720)
         self._status_sig.connect(self._apply_status)
         self._auto_check_enabled = False
         self._auto_check_interval = 60
@@ -1163,6 +1371,8 @@ class ProxyApp(QMainWindow):
         self._countdown_timer.timeout.connect(self._update_countdown)
         self._countdown_remaining = self._auto_check_interval
         self._auto_check_pending = 0   # number of cards still being processed in current cycle
+        self._pre_check_thread: QThread | None = None   # port pre-check thread
+        self._pre_check_worker: "PortPreCheckWorker | None" = None
         self._build_ui()
         self._center()
         self._set_defaults()
@@ -1281,6 +1491,17 @@ class ProxyApp(QMainWindow):
         # ── Action bar (full width, 2 buttons) ───────────────────────────────
         act = QHBoxLayout(); act.setSpacing(10)
 
+        self._geo_check_btn = QPushButton("🌐 Lookup")
+        self._geo_check_btn.setObjectName("geoCheckBtn")
+        self._geo_check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._geo_check_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._geo_check_btn.setFixedHeight(36)
+        self._geo_check_btn.setToolTip(
+            "Ping the port entered above, then look up geo info (country, state, city, ISP) "
+            "for the resolved IP using ip-api.com"
+        )
+        self._geo_check_btn.clicked.connect(self._do_geo_check)
+
         self._fetch_btn = QPushButton("🔍 Retrieve")
         self._fetch_btn.setObjectName("fetchBtn")
         self._fetch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1344,6 +1565,7 @@ class ProxyApp(QMainWindow):
         bulk_layout.addWidget(self._bulk_check_btn)
         bulk_layout.addWidget(self._bulk_refresh_btn)
 
+        act.addWidget(self._geo_check_btn, 1)
         act.addWidget(self._fetch_btn, 2)
         act.addWidget(self._clear_cache_btn, 1)
         act.addWidget(self._bulk_widget, 2)
@@ -1863,17 +2085,17 @@ class ProxyApp(QMainWindow):
                 creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
                 shell=False,
             )
-            self._set_status("⏳  Opening CliProxy...", PALETTE['label'])
+            self._set_status("⏳ Opening CliProxy...", PALETTE['label'])
             # Check status after 3 seconds to see if CliProxy started successfully
             QTimer.singleShot(3000, self._check_cliproxy_status_after_open)
         except Exception as e:
-            self._set_status(f"✖  Cannot open CliProxy: {e}", "#e05252")
+            self._set_status(f"✖ Cannot open CliProxy: {e}", "#e05252")
 
     def _cliproxy_btn_clicked(self):
         """Called when user clicks the CliProxy button."""
         if self._is_cliproxy_running():
             # Already running — just update status bar info
-            self._set_status("✔  CliProxy is already running", PALETTE['success'])
+            self._set_status("✔ CliProxy is already running", PALETTE['success'])
         else:
             # Not running — try to open it
             self._open_cliproxy()
@@ -1881,9 +2103,116 @@ class ProxyApp(QMainWindow):
     def _check_cliproxy_status_after_open(self):
         """Check CliProxy status after attempting to open it and update status bar."""
         if self._is_cliproxy_running():
-            self._set_status("✔  CliProxy opened successfully", PALETTE['success'])
+            self._set_status("✔ CliProxy opened successfully", PALETTE['success'])
         else:
-            self._set_status("✖  CliProxy failed to open or is not responding", "#e05252")
+            self._set_status("✖ CliProxy failed to open or is not responding", "#e05252")
+
+    # ── Geo Check (action-bar button) ────────────────────────────────────────
+    def _do_geo_check(self):
+        """Ping the port in the PORT input, then query ip-api.com for geo info."""
+        port_str = self._port_edit.text().strip()
+        if not port_str:
+            self._set_status("⚠ Enter a port number first.", PALETTE['warning'])
+            return
+        try:
+            port_int = int(port_str)
+            if not (1 <= port_int <= 65535):
+                raise ValueError
+        except ValueError:
+            self._set_status("⚠ Invalid port number (1–65535).", PALETTE['warning'])
+            return
+
+        self._geo_check_btn.setEnabled(False)
+        self._set_status(f"🌐 Lookup port {port_int}…", PALETTE['subtext'])
+
+        self._geo_thread = QThread()
+        self._geo_worker = GeoCheckWorker(f"{current_ipv4()}:{port_int}")
+        self._geo_worker.moveToThread(self._geo_thread)
+        self._geo_thread.started.connect(self._geo_worker.run)
+        self._geo_worker.result.connect(self._on_geo_result)
+        self._geo_worker.result.connect(self._geo_thread.quit)
+        self._geo_thread.finished.connect(self._geo_thread.deleteLater)
+        self._geo_thread.start()
+
+    def _on_geo_result(
+        self,
+        alive: bool,
+        elapsed_ms: float,
+        origin_ip: str,
+        country: str,
+        country_code: str,
+        region_name: str,
+        city: str,
+        isp: str,
+        error: str,
+    ):
+        self._geo_check_btn.setEnabled(True)
+        port_str = self._port_edit.text().strip()
+
+        if not alive:
+            detail = f"  ({error})" if error else ""
+            self._set_status(
+                f"❌ Port {port_str} dead", PALETTE['error']
+            )
+            return
+
+        # ── Port is alive: update the matching card (by port) ──────────────
+        self._set_status(
+            f"✅ Port {port_str} live",
+            PALETTE['success'],
+        )
+
+        # Build geo update dict
+        updates = {
+            "country":     country_code,
+            "state":       region_name,
+            "city":        city,
+            "isp":         isp,
+            "response_ip": origin_ip,
+            "ping_ms":     round(elapsed_ms, 1),
+        }
+
+        # Persist to data file and refresh the matching card's UI
+        update_proxy_in_file(origin_ip, port_str, updates)
+        # Also try host-based key (127.0.0.1:port)
+        update_proxy_in_file("127.0.0.1", port_str, updates)
+
+        # Update every card whose port matches
+        found = False
+        for i in range(self._result_layout.count() - 1):
+            item = self._result_layout.itemAt(i)
+            if not item:
+                continue
+            card = item.widget()
+            if not isinstance(card, ProxyCard):
+                continue
+            _, card_port = card._ip_port()
+            if card_port == port_str:
+                card.update_geo_data(
+                    elapsed_ms=elapsed_ms,
+                    origin_ip=origin_ip,
+                    country_code=country_code,
+                    region_name=region_name,
+                    city=city,
+                    isp=isp,
+                )
+                found = True
+
+        if not found:
+            # No existing card — create a new one
+            proxy_dict = {
+                "ip":      origin_ip,
+                "port":    port_str,
+                "country": country_code,
+                "state":   region_name,
+                "city":    city,
+                "isp":     isp,
+                "_city":   city,
+                "ping_ms": round(elapsed_ms, 1),
+                "response_ip": origin_ip,
+            }
+            save_proxies_to_file([proxy_dict])
+            self._load_cached_proxies()
 
     def _fetch(self):
         country = self._area_cb.current_value().upper()
@@ -1892,7 +2221,7 @@ class ProxyApp(QMainWindow):
                                 "Please enter an Area Code (country).")
             return
 
-        port = self._port_edit.text().strip()
+        port_str = self._port_edit.text().strip()
 
         params = {
             "country": country,
@@ -1900,7 +2229,7 @@ class ProxyApp(QMainWindow):
             "city":    self._city_cb.current_value() or "",
             "postal":  "",
             "isp":     self._network_cb.current_value(),
-            "start":   port or "2000",
+            "start":   port_str or "2000",
             "num":     self._number_edit.text().strip() or "1",
             "ip":      "",
         }
@@ -1908,8 +2237,59 @@ class ProxyApp(QMainWindow):
         # Stash form params so they can be embedded into the saved proxy dict
         self._last_fetch_params = params
 
-        self._set_status("⏳ Fetching…", PALETTE['subtext'])
+        # ── Pre-check: ping the port first ────────────────────────────────────
+        if port_str:
+            try:
+                port_int = int(port_str)
+                if 1 <= port_int <= 65535:
+                    self._set_status(f"⏳ Checking port {port_int}…", PALETTE['subtext'])
+                    self._fetch_btn.setEnabled(False)
+                    self._pre_check_thread = QThread()
+                    self._pre_check_worker = PortPreCheckWorker("127.0.0.1", port_int)
+                    self._pre_check_worker.moveToThread(self._pre_check_thread)
+                    self._pre_check_thread.started.connect(self._pre_check_worker.run)
+                    self._pre_check_worker.result.connect(self._on_port_pre_check)
+                    self._pre_check_worker.result.connect(self._pre_check_thread.quit)
+                    self._pre_check_thread.finished.connect(self._pre_check_thread.deleteLater)
+                    self._pre_check_thread.start()
+                    return
+            except ValueError:
+                pass  # invalid port — fall through to API fetch
+
+        # No valid port entered → go straight to API
+        self._do_api_fetch(params)
+
+    def _on_port_pre_check(self, alive: bool, elapsed_ms: float, peer_ip: str, host: str, port: int):
+        """Called after TCP pre-check of the port entered in the form."""
+        params = self._last_fetch_params
+
+        if alive:
+            # Port is alive → build a proxy dict from form metadata + the live port
+            self._set_status(f"✅ Port {port} alive ({elapsed_ms:.0f} ms) — added to list", PALETTE['success'])
+            proxy_dict = {
+                "ip":      peer_ip or host,
+                "port":    str(port),
+                "country": params.get("country", ""),
+                "state":   params.get("state",   ""),
+                "city":    params.get("city",    ""),
+                "isp":     params.get("isp",     ""),
+                "_city":   params.get("city",    ""),
+                "ping_ms": round(elapsed_ms, 1),
+            }
+            save_proxies_to_file([proxy_dict])
+            self._load_cached_proxies()
+            if self._current_sort is not None:
+                self._rebuild_sorted_cards()
+            self._fetch_btn.setEnabled(True)
+        else:
+            # Port is dead → fetch from API as usual
+            self._set_status(f"⚠ Port {port} dead — fetching from API…", PALETTE['subtext'])
+            self._do_api_fetch(params)
+
+    def _do_api_fetch(self, params: dict):
+        """Start the actual API network request."""
         self._fetch_btn.setEnabled(False)
+        self._set_status("⏳ Fetching…", PALETTE['subtext'])
 
         self._thread = QThread()
         self._worker = FetchWorker(params, API_BASE)

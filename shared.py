@@ -116,6 +116,17 @@ QPushButton#fetchBtn {{
 QPushButton#fetchBtn:hover   {{ background: {PALETTE['btn_hv']}; }}
 QPushButton#fetchBtn:pressed  {{ background: #5a52e0; }}
 QPushButton#fetchBtn:disabled {{ background: {PALETTE['border']}; color: {PALETTE['subtext']}; }}
+QPushButton#geoCheckBtn {{
+    color: #38bdf8;
+    border: 1.5px solid {PALETTE['border']};
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 10pt;
+    font-weight: 700;
+}}
+QPushButton#geoCheckBtn:hover   {{ background: #0f3460; color: #fff; }}
+QPushButton#geoCheckBtn:pressed  {{ background: #0f3460; color: #fff; }}
+QPushButton#geoCheckBtn:disabled {{ background: {PALETTE['card']}; color: {PALETTE['subtext']}; border-color: {PALETTE['border']}; }}
 QPushButton#clearBtn {{
     background: {PALETTE['card']};
     color: {PALETTE['label']};

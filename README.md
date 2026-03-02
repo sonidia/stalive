@@ -1,88 +1,108 @@
-# 🔄 Proxer
+# Proxy Fetcher
 
-A sleek, dark-themed desktop application for fetching, managing, and auto-rotating residential proxies from a **Cliproxy** API server. Built with Python and PySide6.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![PySide6](https://img.shields.io/badge/PySide6-6.0+-green.svg)](https://pypi.org/project/PySide6/)
 
----
+A modern, dark-themed desktop application for fetching, managing, and auto-rotating residential proxies from Cliproxy API servers. Built with Python and PySide6 for a seamless user experience.
+
+## 📋 Table of Contents
+
+- [Features](#-features)
+- [Prerequisites](#-prerequisites)
+- [Installation](#-installation)
+- [Usage](#-usage)
+- [Configuration](#-configuration)
+- [Building](#-building)
+- [Supported Countries](#-supported-countries)
+- [Project Structure](#-project-structure)
+- [Dependencies](#-dependencies)
+- [Contributing](#-contributing)
+- [License](#-license)
 
 ## ✨ Features
 
-- 🌍 **Multi-country proxy filtering** — Filter by country, state/province, city, and ISP/network
-- 🔍 **Proxy retrieval** — Fetch one or multiple proxies in a single request
-- 🃏 **Proxy cards** — Each proxy is displayed as a rich card with status, ping, and metadata tags
-- ⚡ **Live proxy checking** — Test if a proxy is alive with real-time ping measurement
-- ↻ **Proxy refresh** — Re-fetch a new proxy for a slot using the same parameters
-- ⚡ **Bulk check / Bulk refresh** — Check or refresh all proxies at once
-- ⏰ **Auto-rotate** — Automatically check and refresh dead proxies on a configurable interval (5 – 300 s)
-- 📋 **One-click copy** — Copy any proxy to clipboard instantly
-- 💾 **Persistent cache** — Proxies are saved locally in `data.json` and survive app restarts
-- 🔗 **Configurable API URL** — Connect to any Cliproxy server by updating the API base URL
-- 🚦 **Cliproxy status indicator** — Automatically detects whether Cliproxy is running and locks the UI if it isn't
+### Core Functionality
 
----
+- 🌍 **Multi-country proxy filtering** - Filter proxies by country, state/province, city, and ISP/network
+- 🔍 **Flexible proxy retrieval** - Fetch single or multiple proxies in one request
+- 🃏 **Rich proxy cards** - Visual proxy display with status, ping, and metadata tags
+- ⚡ **Real-time proxy checking** - Live ping measurement and connectivity testing
+- ↻ **Smart proxy refresh** - Re-fetch proxies using the same parameters
+- ⚡ **Bulk operations** - Check or refresh all proxies simultaneously
 
-## 🖥️ Screenshot
+### Automation & Management
 
-> Dark-themed, minimal UI with proxy cards, status badges, and action buttons.
+- ⏰ **Auto-rotation** - Automatic proxy checking and refreshing on configurable intervals (5-300 seconds)
+- 📋 **One-click copy** - Instant clipboard copying of proxy details
+- 💾 **Persistent storage** - Local caching in JSON format with app restart persistence
+- 🔗 **Flexible API configuration** - Connect to any Cliproxy server instance
+- 🚦 **Status monitoring** - Real-time Cliproxy server status detection with UI locking
 
----
+### User Experience
 
-## 🚀 Getting Started
+- 🖥️ **Modern dark UI** - Sleek, professional interface design
+- 📊 **Statistics tracking** - Comprehensive usage and performance metrics
+- 🔧 **Intuitive configuration** - Easy-to-use settings and preferences
+- 📱 **Responsive design** - Optimized for various screen sizes
 
-### Prerequisites
+## 🛠️ Prerequisites
 
-- Python **3.10+**
-- [Cliproxy](https://cliproxy.com) running and accessible on your network
+- **Python 3.10 or higher**
+- **Cliproxy server** running and accessible on your network
+- **Windows/Linux/macOS** (cross-platform support)
 
-### Installation
+## 🚀 Installation
+
+### Option 1: Clone and Run (Development)
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/proxer.git
-cd proxer
+git clone https://github.com/sonidia/proxy.git
+cd proxy
+
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
-```
 
-### Running
-
-```bash
+# Run the application
 python app.py
 ```
 
----
+### Option 2: Download Executable (Production)
 
-## 📦 Building an Executable
+1. Download the latest release from [Releases](https://github.com/sonidia/proxy/releases)
+2. Extract the ZIP file
+3. Run `ProxyFetcher.exe` (Windows) or `ProxyFetcher` (Linux/macOS)
 
-A PyInstaller build script is included.
+## 📖 Usage
 
-```bat
-build.bat
-```
+### Basic Usage
 
-The spec file (`build.spec`) bundles all assets (including `icon.png` and `data.json`) into a single executable.
+1. **Launch the application** by running `python app.py` or the executable
+2. **Configure API URL** if your Cliproxy server is not on the default address
+3. **Select proxy parameters** using the dropdown menus for country, state, city, and network
+4. **Fetch proxies** using the "Get Proxy" button
+5. **Monitor status** through the visual proxy cards showing ping and connectivity
+6. **Copy proxy details** by clicking the copy button on any proxy card
 
----
+### Advanced Features
 
-## ⚙️ Configuration
+- **Auto-rotation**: Enable automatic proxy refreshing in the settings
+- **Bulk operations**: Use "Check All" or "Refresh All" for multiple proxies
+- **Statistics**: View detailed usage statistics in the stats modal
+- **Custom intervals**: Configure auto-rotation timing (5-300 seconds)
 
-### API URL
+### Configuration File
 
-On first launch, the app connects to the default Cliproxy API at:
-
-```
-http://192.168.1.29:1998/api
-```
-
-You can change this in the **API URL** field at the top of the window and click **💾 Save**. The URL is persisted to `data.json`.
-
-### data.json
-
-All application state is stored in `data.json` next to the executable (or script):
+The application stores all settings in `data.json`:
 
 ```json
 {
-  "api_base": "http://192.168.1.13:1998/api",
+  "api_base": "http://localhost:1998/api",
   "proxies": [
     {
       "ip": "192.168.1.13",
@@ -90,61 +110,148 @@ All application state is stored in `data.json` next to the executable (or script
       "country": "US",
       "state": "Florida",
       "city": "Jacksonville",
-      "isp": "ATT"
+      "isp": "ATT",
+      "ping": 45,
+      "status": "alive"
     }
-  ]
+  ],
+  "auto_rotate_interval": 60,
+  "theme": "dark"
 }
 ```
 
----
+## ⚙️ Configuration
 
-## 🗺️ Supported Countries & Networks
+### API Configuration
 
-| Country           | Code | Sample Networks                   |
-| ----------------- | ---- | --------------------------------- |
-| 🇺🇸 United States  | `US` | ATT, Verizon, T-Mobile, Comcast … |
-| 🇦🇺 Australia      | `AU` | Telstra, Optus, Vodafone …        |
-| 🇬🇧 United Kingdom | `GB` | BT, Sky, Virgin Media …           |
-| 🇩🇪 Germany        | `DE` | Deutsche Telekom, Vodafone …      |
-| 🇫🇷 France         | `FR` | Orange, SFR, Bouygues …           |
-| 🇯🇵 Japan          | `JP` | NTT, SoftBank, KDDI …             |
-| 🇨🇦 Canada         | `CA` | Bell, Rogers, Telus …             |
-| 🇸🇬 Singapore      | `SG` | Singtel, StarHub, M1 …            |
-| 🇮🇳 India          | `IN` | Jio, Airtel, BSNL …               |
-| 🇧🇷 Brazil         | `BR` | Vivo, Claro, TIM …                |
+- **Default API URL**: `http://localhost:1998/api`
+- **Custom servers**: Enter any Cliproxy API endpoint in the UI
+- **Network requirements**: HTTP/HTTPS access to Cliproxy server
 
----
+### Application Settings
 
-## 🧩 Dependencies
+- **Auto-rotation interval**: 5-300 seconds
+- **Theme**: Dark (default) or Light
+- **Ping timeout**: Configurable timeout for connectivity tests
+- **Bulk operation limits**: Maximum concurrent operations
 
-| Package    | Version   |
-| ---------- | --------- |
-| `PySide6`  | >= 6.0.0  |
-| `requests` | >= 2.25.0 |
+## 🏗️ Building
 
-Install all at once:
+### Windows Executable
 
-```bash
-pip install -r requirements.txt
+```batch
+# Run the build script
+build.bat
+
+# Or manually with PyInstaller
+pyinstaller --onefile --windowed --name ProxyFetcher app.py
 ```
 
----
+### Cross-Platform Build
+
+```bash
+# Install PyInstaller
+pip install pyinstaller
+
+# Build for current platform
+pyinstaller build.spec
+
+# Build for specific platforms (requires corresponding Python environment)
+# Windows: pyinstaller --onefile --windowed --name ProxyFetcher app.py
+# Linux: pyinstaller --onefile --name ProxyFetcher app.py
+# macOS: pyinstaller --onefile --name ProxyFetcher app.py
+```
+
+The build process includes:
+
+- Single executable file generation
+- All dependencies bundled
+- Icon and data files included
+- Optimized for distribution
+
+## 🌍 Supported Countries
+
+| Country           | Code | Major Networks                             |
+| ----------------- | ---- | ------------------------------------------ |
+| 🇺🇸 United States  | `US` | AT&T, Verizon, T-Mobile, Comcast, Spectrum |
+| 🇦🇺 Australia      | `AU` | Telstra, Optus, Vodafone, Tangerine        |
+| 🇬🇧 United Kingdom | `GB` | BT, Sky, Virgin Media, TalkTalk            |
+| 🇩🇪 Germany        | `DE` | Deutsche Telekom, Vodafone, O2             |
+| 🇫🇷 France         | `FR` | Orange, SFR, Bouygues, Free                |
+| 🇯🇵 Japan          | `JP` | NTT, SoftBank, KDDI, au                    |
+| 🇨🇦 Canada         | `CA` | Bell, Rogers, Telus, Shaw                  |
+| 🇸🇬 Singapore      | `SG` | Singtel, StarHub, M1                       |
+| 🇮🇳 India          | `IN` | Jio, Airtel, BSNL, Vi                      |
+| 🇧🇷 Brazil         | `BR` | Vivo, Claro, TIM, Oi                       |
+
+_Additional countries and networks are supported through the Cliproxy API._
 
 ## 📁 Project Structure
 
 ```
-proxer/
-├── app.py            # Main application (UI + logic)
-├── shared.py         # Country/state/city/network data
-├── data.json         # Persistent storage (API URL + proxy cache)
-├── requirements.txt  # Python dependencies
-├── build.bat         # Windows build script (PyInstaller)
-├── build.spec        # PyInstaller spec file
-└── README.md
+proxy/
+├── app.py                 # Main application entry point and UI
+├── shared.py              # Shared data and constants (countries, networks)
+├── utils.py               # Utility functions and helpers
+├── stats.py               # Statistics collection and display modal
+├── ping.py                # Network ping testing functionality
+├── data.json              # Application configuration and proxy cache
+├── requirements.txt       # Python dependencies
+├── build.bat              # Windows build script
+├── build.spec             # PyInstaller specification file
+├── LICENSE                # MIT License
+└── README.md              # This file
 ```
 
----
+## 📦 Dependencies
+
+| Package       | Version   | Purpose                            |
+| ------------- | --------- | ---------------------------------- |
+| `PySide6`     | >= 6.0.0  | Qt6 Python bindings for GUI        |
+| `requests`    | >= 2.25.0 | HTTP library for API communication |
+| `pyinstaller` | >= 5.0.0  | Application packaging (build only) |
+
+### Installing Dependencies
+
+```bash
+# Install runtime dependencies
+pip install -r requirements.txt
+
+# Install development dependencies (optional)
+pip install pyinstaller black flake8 pytest
+```
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### Development Setup
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes and add tests
+4. Run tests: `python -m pytest`
+5. Commit your changes: `git commit -m 'Add amazing feature'`
+6. Push to the branch: `git push origin feature/amazing-feature`
+7. Open a Pull Request
+
+### Code Style
+
+- Follow PEP 8 guidelines
+- Use type hints where possible
+- Add docstrings to functions and classes
+- Run `black` for code formatting
 
 ## 📄 License
 
-This project is licensed under the terms in [LICENSE](LICENSE).
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [Cliproxy](https://cliproxy.com) for the residential proxy infrastructure
+- [PySide6](https://wiki.qt.io/Qt_for_Python) for the excellent GUI framework
+- [Python](https://python.org) for the amazing programming language
+
+---
+
+**Made with ❤️ by [Tran Nguyen Thuong Truong](https://github.com/thuongtruong109)**

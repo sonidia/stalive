@@ -1365,7 +1365,7 @@ class ProxyApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Proxer - Auto rotate proxies from CliProxy")
-        self.setFixedSize(840, 744)
+        self.setFixedSize(780, 744)
         self._status_sig.connect(self._apply_status)
         self._auto_check_enabled = False
         self._auto_check_interval = 60
@@ -1416,7 +1416,7 @@ class ProxyApp(QMainWindow):
         root.setObjectName("central")
         self.setCentralWidget(root)
         main = QVBoxLayout(root)
-        main.setContentsMargins(16, 22, 14, 10)
+        main.setContentsMargins(16, 16, 14, 10)
         main.setSpacing(0)
 
         # ── Cliproxy status auto-refresh timer ───────────────────────────────
@@ -1501,7 +1501,8 @@ class ProxyApp(QMainWindow):
         self._geo_check_btn.setObjectName("geoCheckBtn")
         self._geo_check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._geo_check_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._geo_check_btn.setFixedHeight(36)
+        self._geo_check_btn.setFixedHeight(34)
+        # self._geo_check_btn.setStyleSheet("QPushButton {  }")
         self._geo_check_btn.setToolTip(
             "Ping by target port"
         )
@@ -1511,7 +1512,8 @@ class ProxyApp(QMainWindow):
         self._fetch_btn.setObjectName("fetchBtn")
         self._fetch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._fetch_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._fetch_btn.setFixedHeight(36)
+        self._fetch_btn.setFixedHeight(33)
+        self._fetch_btn.setStyleSheet("QPushButton { padding-left: 6px; padding-right: 6px; }")
         self._fetch_btn.setToolTip(
             "Fetch new proxy for the selected options"
         )
@@ -1521,7 +1523,7 @@ class ProxyApp(QMainWindow):
         self._clear_cache_btn.setObjectName("clearBtn")
         self._clear_cache_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._clear_cache_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._clear_cache_btn.setFixedHeight(36)
+        self._clear_cache_btn.setFixedHeight(34)
         self._clear_cache_btn.setToolTip(
             "Clear all saved proxies and stats"
         )
@@ -1531,7 +1533,7 @@ class ProxyApp(QMainWindow):
         self._auto_check_btn.setObjectName("autoCheckBtn")
         self._auto_check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._auto_check_btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        self._auto_check_btn.setFixedHeight(36)
+        self._auto_check_btn.setFixedHeight(34)
         self._auto_check_btn.setFixedWidth(140)
         auto_check_layout = QHBoxLayout(self._auto_check_btn)
         auto_check_layout.setContentsMargins(10, 0, 0, 0)
@@ -1548,7 +1550,7 @@ class ProxyApp(QMainWindow):
         self._timer_interval_btn = QPushButton("⏱")
         self._timer_interval_btn.setObjectName("timerIntervalBtn")
         self._timer_interval_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._timer_interval_btn.setFixedSize(36, 36)
+        self._timer_interval_btn.setFixedSize(34, 34)
         self._timer_interval_btn.setEnabled(False)
         self._timer_interval_btn.clicked.connect(self._show_timer_popover)
 
@@ -1556,7 +1558,7 @@ class ProxyApp(QMainWindow):
         self._bulk_check_btn.setObjectName("bulkCheckBtn")
         self._bulk_check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._bulk_check_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._bulk_check_btn.setFixedHeight(36)
+        self._bulk_check_btn.setFixedHeight(34)
         self._bulk_check_btn.setEnabled(False)
         self._bulk_check_btn.setToolTip(
             "Check status of all proxies"
@@ -1567,7 +1569,7 @@ class ProxyApp(QMainWindow):
         self._bulk_refresh_btn.setObjectName("bulkRefreshBtn")
         self._bulk_refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._bulk_refresh_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._bulk_refresh_btn.setFixedHeight(36)
+        self._bulk_refresh_btn.setFixedHeight(34)
         self._bulk_refresh_btn.setEnabled(False)
         self._bulk_refresh_btn.setToolTip(
             "Refresh new ones for all proxies"

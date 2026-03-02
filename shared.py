@@ -126,7 +126,7 @@ QPushButton#geoCheckBtn {{
     border-bottom-left-radius: 8px;
     border-top-right-radius: 0px;
     border-bottom-right-radius: 0px;
-    padding: 10px 14px;
+    padding: 0 10px;
     font-size: 10pt;
     font-weight: 700;
 }}
@@ -138,7 +138,7 @@ QPushButton#clearBtn {{
     color: {PALETTE['label']};
     border: 1.5px solid {PALETTE['border']};
     border-radius: 8px;
-    padding: 10px 18px;
+    padding: 0 10px;
     font-size: 10pt;
     font-weight: 700;
 }}
@@ -205,7 +205,7 @@ QPushButton#bulkCheckBtn {{
     border-radius: 8px;
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
-    padding: 10px 18px;
+    padding: 0px 10px;
     font-size: 10pt;
     font-weight: 700;
 }}
@@ -219,7 +219,7 @@ QPushButton#bulkRefreshBtn {{
     border-radius: 8px;
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
-    padding: 10px 18px;
+    padding: 0px 10px;
     font-size: 10pt;
     font-weight: 700;
 }}

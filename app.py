@@ -1,4 +1,4 @@
-import sys, json, requests, time, os, csv, socket
+import sys, json, requests, time, os, csv, socket, uuid
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
 from stats import stats_collector, StatsModal
@@ -57,9 +57,19 @@ def _save_app_data(data: dict):
         print(f"Error saving app data: {e}")
 
 def load_proxies_from_file() -> list:
-    """Load proxy list from unified data file."""
+    """Load proxy list from unified data file. Assigns _id to any entry that lacks one."""
     try:
-        return list(_load_app_data().get("proxies", []))
+        data = _load_app_data()
+        proxies = list(data.get("proxies", []))
+        dirty = False
+        for p in proxies:
+            if "_id" not in p:
+                p["_id"] = str(uuid.uuid4())
+                dirty = True
+        if dirty:
+            data["proxies"] = proxies
+            _save_app_data(data)
+        return proxies
     except Exception as e:
         print(f"Error loading proxies: {e}")
     return []
@@ -74,8 +84,7 @@ def save_proxies_to_file(new_proxies: list):
         for p in existing:
             ip   = p.get("ip", p.get("host", ""))
             port = p.get("port", "")
-            if ip:
-                existing_keys.add(f"{ip}:{port}")
+            existing_keys.add(f"{ip}:{port}")
 
         added = 0
         for p in new_proxies:
@@ -83,6 +92,9 @@ def save_proxies_to_file(new_proxies: list):
             port = p.get("port", "")
             key  = f"{ip}:{port}"
             if key not in existing_keys:
+                # Assign a stable unique ID so delete/update can target this exact entry
+                if "_id" not in p:
+                    p["_id"] = str(uuid.uuid4())
                 existing.append(p)
                 existing_keys.add(key)
                 added += 1
@@ -93,30 +105,43 @@ def save_proxies_to_file(new_proxies: list):
     except Exception as e:
         print(f"Error saving proxies: {e}")
 
-def delete_proxy_from_file(ip: str, port: str):
-    """Remove a proxy by ip:port from the unified data file."""
+def delete_proxy_from_file(proxy_id: str = "", ip: str = "", port: str = ""):
+    """Remove a proxy from the unified data file.
+    Matches by _id first (exact), falls back to ip:port key.
+    """
     try:
         data = _load_app_data()
         proxies = data.get("proxies", [])
-        key = f"{ip}:{port}"
-        data["proxies"] = [
-            p for p in proxies
-            if f"{p.get('ip', p.get('host', ''))}:{p.get('port', '')}" != key
-        ]
+        if proxy_id:
+            data["proxies"] = [p for p in proxies if p.get("_id", "") != proxy_id]
+        else:
+            key = f"{ip}:{port}"
+            data["proxies"] = [
+                p for p in proxies
+                if f"{p.get('ip', p.get('host', ''))}:{p.get('port', '')}" != key
+            ]
         _save_app_data(data)
     except Exception as e:
         print(f"Error deleting proxy: {e}")
 
-def update_proxy_in_file(ip: str, port: str, updates: dict):
-    """Update specific fields of an existing proxy entry in the unified data file."""
+def update_proxy_in_file(proxy_id: str = "", ip: str = "", port: str = "", updates: dict = None):
+    """Update specific fields of an existing proxy entry.
+    Matches by _id first (exact), falls back to ip:port key.
+    """
+    if updates is None:
+        updates = {}
     try:
         data = _load_app_data()
         proxies = data.get("proxies", [])
-        key = f"{ip}:{port}"
         for p in proxies:
-            if f"{p.get('ip', p.get('host', ''))}:{p.get('port', '')}" == key:
+            if proxy_id and p.get("_id", "") == proxy_id:
                 p.update(updates)
                 break
+            elif not proxy_id:
+                key = f"{ip}:{port}"
+                if f"{p.get('ip', p.get('host', ''))}:{p.get('port', '')}" == key:
+                    p.update(updates)
+                    break
         data["proxies"] = proxies
         _save_app_data(data)
     except Exception as e:
@@ -277,7 +302,6 @@ def make_flag_pixmap(country_code: str, width: int = 22, height: int = 14) -> QP
     painter.end()
     return pix
 
-
 def draw_country_flag(painter: QPainter, country_code: str, rect: QRect):
     """Draw a simple flag icon for the given country code into rect using painter."""
     # Flag dimensions
@@ -378,7 +402,6 @@ class FetchWorker(QObject):
         except Exception as exc:
             self.error.emit(str(exc))
 
-
 # ─── Proxy check worker ────────────────────────────────────────────────────────
 class ProxyCheckWorker(QObject):
     result = Signal(bool, float, str)   # alive, elapsed_ms (-1 if failed), response_ip
@@ -409,7 +432,6 @@ class ProxyCheckWorker(QObject):
         except Exception:
             self.result.emit(False, -1.0, "")
 
-
 # ─── Refresh worker (re-fetch one proxy slot by its original params) ───────────
 class RefreshWorker(QObject):
     finished = Signal(object)   # requests.Response
@@ -430,7 +452,6 @@ class RefreshWorker(QObject):
             self.error.emit("Request timed out.")
         except Exception as exc:
             self.error.emit(str(exc))
-
 
 # ─── Port pre-check worker (ping TCP before fetching from API) ─────────────────
 class PortPreCheckWorker(QObject):
@@ -458,7 +479,6 @@ class PortPreCheckWorker(QObject):
         except Exception:
             elapsed = (time.monotonic() - t0) * 1000
             self.result.emit(False, elapsed, "", self._host, self._port)
-
 
 # ─── Geo-check worker: Ping proxy then query ip-api.com ──────────────────
 class GeoCheckWorker(QObject):
@@ -529,7 +549,6 @@ class GeoCheckWorker(QObject):
             country, country_code, region_name, city, isp, "",
         )
 
-
 # ─── Proxy Card widget ─────────────────────────────────────────────────────────
 class ProxyCard(QWidget):
     """A rich card widget representing one cached proxy entry."""
@@ -549,6 +568,7 @@ class ProxyCard(QWidget):
         self._check_worker   = None
         self._auto_check_triggered  = False
         self._auto_refresh_pending  = False
+        self._local_ip = current_ipv4() or "127.0.0.1"
         self._build()
 
     # ── accessors ──
@@ -556,8 +576,11 @@ class ProxyCard(QWidget):
     def proxy_dict(self) -> dict:
         return self._proxy_dict
 
+    def _proxy_id(self) -> str:
+        return self._proxy_dict.get("_id", "")
+
     def _ip_port(self) -> tuple:
-        ip   = self._proxy_dict.get("ip",   self._proxy_dict.get("host", "")) or current_ipv4()
+        ip   = self._proxy_dict.get("ip",   self._proxy_dict.get("host", ""))
         port = self._proxy_dict.get("port", "")
         return ip, str(port)
 
@@ -688,12 +711,12 @@ class ProxyCard(QWidget):
         outer.addWidget(status_widget, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # ── Action buttons (centered vertically across both rows) ──
-        self._refresh_btn = QPushButton("↻  Refresh")
+        self._refresh_btn = QPushButton("↻ Refresh")
         self._refresh_btn.setObjectName("cardRefreshBtn")
         self._refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._refresh_btn.setFixedHeight(28)
 
-        self._check_btn = QPushButton("⚡ Check")
+        self._check_btn = QPushButton("⚡Check")
         self._check_btn.setObjectName("cardCheckBtn")
         self._check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._check_btn.setFixedHeight(28)
@@ -828,27 +851,29 @@ class ProxyCard(QWidget):
         ip, port = self._ip_port()
         reply = QMessageBox.question(
             self, "Confirm Delete",
-            f"Delete proxy {ip}:{port}?",
+            f"Delete proxy {ip or '?'}:{port}?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        delete_proxy_from_file(ip, port)
+        delete_proxy_from_file(proxy_id=self._proxy_id(), ip=ip, port=port)
         self.deleted.emit(self)
 
     # ── Check ──
     def _do_check(self):
-        ip, port = self._ip_port()
-        if not ip:
+        _, port = self._ip_port()
+        if not port:
             return
 
-        # Auto-check optimisation: if already confirmed alive, skip re-ping
-        if self._auto_check_triggered and self._status_lbl.objectName() == "statusAlive":
-            self._auto_check_triggered = False
-            self.auto_check_done.emit(self)
-            return
+        # Re-fetch local IP before every check to detect network changes
+        fresh_ip = current_ipv4() or "127.0.0.1"
+        if fresh_ip != self._local_ip:
+            print(f"[ProxyCard] Local IP changed: {self._local_ip} → {fresh_ip}")
+            self._local_ip = fresh_ip
+            # Update the displayed proxy string on the card label
+            self._ip_lbl.setText(f"{fresh_ip}:{port}")
 
-        proxy_str = f"{ip}:{port}"
+        proxy_str = f"{self._local_ip}:{port}"
         self._check_btn.setEnabled(False)
         self._status_lbl.setObjectName("statusChecking")
         self._status_lbl.setText("… checking")
@@ -861,6 +886,7 @@ class ProxyCard(QWidget):
         self._check_thread.started.connect(self._check_worker.run)
         self._check_worker.result.connect(self._on_check_result)
         self._check_worker.result.connect(self._check_thread.quit)
+        self._check_thread.finished.connect(self._check_thread.deleteLater)
         self._check_thread.start()
 
     def _on_check_result(self, alive: bool, elapsed: float, response_ip: str = ""):
@@ -883,15 +909,15 @@ class ProxyCard(QWidget):
                 self._response_ip_lbl.setText(f" → {response_ip}")
                 updates["response_ip"] = response_ip
             if updates:
-                update_proxy_in_file(ip, port, updates)
+                update_proxy_in_file(proxy_id=self._proxy_id(), ip=ip, port=port, updates=updates)
             was_auto = self._auto_check_triggered
             self._auto_check_triggered = False  # Reset flag
             if was_auto:
                 self.auto_check_done.emit(self)  # Notify: cycle done, proxy is alive
         else:
-            self._status_lbl.setObjectName("statusUnknown")
-            self._status_lbl.setText("● Unknown")
-            self._ping_lbl.setText("0 ms")
+            self._status_lbl.setObjectName("statusDead")
+            self._status_lbl.setText("✕ Dead")
+            self._ping_lbl.setText("")
             # Auto-refresh if this check was triggered automatically
             if self._auto_check_triggered:
                 self._auto_check_triggered = False  # Reset flag
@@ -1014,7 +1040,7 @@ class ProxyCard(QWidget):
 
         # Delete old proxy from cache, save new one
         old_ip, old_port = self._ip_port()
-        delete_proxy_from_file(old_ip, old_port)
+        delete_proxy_from_file(proxy_id=self._proxy_id(), ip=old_ip, port=old_port)
         save_proxies_to_file([new_proxy])
 
         # Notify auto-check cycle before emitting refreshed (card will be destroyed)
@@ -1033,7 +1059,6 @@ class ProxyCard(QWidget):
         self._status_lbl.style().polish(self._status_lbl)
         if was_auto:
             self.auto_check_done.emit(self)
-
 
 # ─── Autocomplete ComboBox ──────────────────────────────────────────────────────
 class HighlightDelegate(QStyledItemDelegate):
@@ -1212,7 +1237,6 @@ class AutoComboBox(QComboBox):
         if not self.view().isVisible():
             self.showPopup()
 
-
 # ─── Blur Overlay ─────────────────────────────────────────────────────────────
 class BlurOverlay(QWidget):
     """Semi-transparent overlay that blocks mouse events on the content beneath it."""
@@ -1264,7 +1288,6 @@ class BlurOverlay(QWidget):
 
     def mouseMoveEvent(self, event):
         event.accept()
-
 
 # ─── Timer interval popover ────────────────────────────────────────────────────
 class TimerPopover(QWidget):
@@ -1357,7 +1380,6 @@ class TimerPopover(QWidget):
         self._val_lbl.setText(f"{val}s")
         self.interval_changed.emit(val)
 
-
 # ─── Main window ───────────────────────────────────────────────────────────────
 class ProxyApp(QMainWindow):
     _status_sig = Signal(str, str)
@@ -1365,7 +1387,7 @@ class ProxyApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Proxer - Auto rotate proxies from CliProxy")
-        self.setFixedSize(780, 744)
+        self.setFixedSize(800, 744)
         self._status_sig.connect(self._apply_status)
         self._auto_check_enabled = False
         self._auto_check_interval = 60
@@ -2203,10 +2225,12 @@ class ProxyApp(QMainWindow):
             "ping_ms":     round(elapsed_ms, 1),
         }
 
-        # Persist to data file and refresh the matching card's UI
-        update_proxy_in_file(origin_ip, port_str, updates)
-        # Also try host-based key (127.0.0.1:port)
-        update_proxy_in_file("127.0.0.1", port_str, updates)
+        # Persist to data file and refresh the matching card's UI.
+        # Use port-only match since geo-check cards may not have an ip field.
+        update_proxy_in_file(ip=origin_ip, port=port_str, updates=updates)
+        # Also try host-based key (127.0.0.1:port) and empty-ip key
+        update_proxy_in_file(ip="127.0.0.1", port=port_str, updates=updates)
+        update_proxy_in_file(ip="", port=port_str, updates=updates)
 
         # Update every card whose port matches
         found = False
@@ -2463,7 +2487,7 @@ class ProxyApp(QMainWindow):
         self._clear_rows()
         if cached:
             for proxy in cached:
-                self._add_proxy_card(proxy)
+                self._add_proxy_card(proxy, auto_check=False)  # never auto-check on load
         # Re-apply current search filter (also updates count label)
         self._apply_proxy_filter(self._proxy_search.text())
         self._update_auto_check_btn_state(len(cached))
@@ -2476,7 +2500,7 @@ class ProxyApp(QMainWindow):
         lbl.setStyleSheet(f"color: {c}; font-size: 9pt; background: transparent; padding: 4px 8px;")
         self._result_layout.insertWidget(self._result_layout.count() - 1, lbl)
 
-    def _add_proxy_card(self, proxy_dict: dict):
+    def _add_proxy_card(self, proxy_dict: dict, auto_check: bool = False):
         card = ProxyCard(proxy_dict, lambda: API_BASE)
         card.deleted.connect(self._on_card_deleted)
         card.refreshed.connect(self._on_card_refreshed)
@@ -2485,8 +2509,8 @@ class ProxyApp(QMainWindow):
         self._result_layout.insertWidget(self._result_layout.count() - 1, card)
         count = self._result_layout.count() - 1  # exclude stretch
         self._update_auto_check_btn_state(count)
-        # Auto-check status for new proxies without ping data
-        if not proxy_dict.get("ping_ms"):
+        # Only auto-check if explicitly requested (new proxy fetched, not loaded from file)
+        if auto_check and not proxy_dict.get("ping_ms"):
             card._do_check()
 
     def _on_card_deleted(self, card: ProxyCard):
@@ -2511,7 +2535,10 @@ class ProxyApp(QMainWindow):
         new_card.update_button_visibility(self._auto_check_enabled)  # Set visibility for new card
         self._result_layout.insertWidget(idx, new_card)
 
-        # Immediately ping the new proxy so status is never left as N/A
+        # Ping the new proxy to confirm it's alive.
+        # If auto-check is active, mark it so a failed check triggers another refresh.
+        if self._auto_check_enabled:
+            new_card._auto_check_triggered = True
         new_card._do_check()
 
     # ── Status (thread-safe) ─────────────────────────────────────────────────
@@ -2639,6 +2666,15 @@ class ProxyApp(QMainWindow):
         """Automatically check all proxy cards and refresh dead ones."""
         # Stop countdown while we are processing (restart after all done)
         self._countdown_timer.stop()
+
+        # Verify local IP is reachable before starting the cycle
+        current_ip = current_ipv4()
+        if not current_ip:
+            self._status_lbl.setText("⚠ No network – auto check skipped")
+            self._status_lbl.setStyleSheet(f"color: {PALETTE['warning']}; font-size: 8pt; background: transparent;")
+            self._restart_auto_check_timer()
+            return
+
         self._status_lbl.setText("⚡ Checking…")
         self._status_lbl.setStyleSheet(f"color: {PALETTE['accent2']}; font-size: 8pt; background: transparent;")
 

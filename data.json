@@ -1,24 +1,15 @@
 {
   "proxies": [
     {
-      "port": "2000",
+      "port": "40000",
       "country": "US",
-      "state": "Florida",
-      "city": "Jacksonville",
-      "isp": "ATT",
-      "_city": "Jacksonville",
-      "ping_ms": 1738.6597000004258,
-      "response_ip": "107.202.233.36"
-    },
-    {
-      "port": "20004",
-      "country": "US",
-      "state": "Maryland",
-      "city": "Silver Spring",
-      "isp": "Verizon Business",
-      "_city": "Silver Spring",
-      "ping_ms": 1447.3,
-      "response_ip": "108.28.51.163"
+      "state": "Delaware",
+      "city": "Wilmington",
+      "isp": "Comcast Cable Communications, LLC",
+      "_city": "Wilmington",
+      "ping_ms": 1593.6,
+      "response_ip": "71.203.121.186",
+      "_id": "dac9e2f4-9ce7-494b-b93a-b0bd4302399d"
     }
   ]
 }

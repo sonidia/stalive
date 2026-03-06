@@ -311,10 +311,10 @@ QPushButton#cardRefreshBtn {{
     color: {PALETTE['accent']};
     border: 1.5px solid {PALETTE['border']};
     border-radius: 6px;
-    padding: 3px 10px;
+    padding: 3px 6px;
     font-size: 8pt;
     font-weight: 700;
-    min-width: 68px;
+    min-width: 50px;
 }}
 QPushButton#cardRefreshBtn:hover   {{ background: {PALETTE['accent']}; color: #fff; border-color: {PALETTE['accent']}; }}
 QPushButton#cardRefreshBtn:pressed  {{ background: #5a52e0; color: #fff; }}
@@ -324,10 +324,10 @@ QPushButton#cardCheckBtn {{
     color: {PALETTE['accent2']};
     border: 1.5px solid {PALETTE['border']};
     border-radius: 6px;
-    padding: 3px 10px;
+    padding: 3px 6px;
     font-size: 8pt;
     font-weight: 700;
-    min-width: 68px;
+    min-width: 50px;
 }}
 QPushButton#cardCheckBtn:hover   {{ background: {PALETTE['accent']}; color: #fff; border-color: {PALETTE['accent']}; }}
 QPushButton#cardCheckBtn:pressed  {{ background: #5a52e0; color: #fff; }}
@@ -337,7 +337,7 @@ QPushButton#cardDeleteBtn {{
     color: {PALETTE['error']};
     border: 1.5px solid {PALETTE['border']};
     border-radius: 6px;
-    padding: 3px 10px;
+    padding: 3px 6px;
     font-size: 8pt;
     font-weight: 700;
     min-width: 20px;

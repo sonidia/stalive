@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-import re, socket, time, requests
-try:
-    import socks as _socks
-    _PYSOCKS_AVAILABLE = True
-except ImportError:
-    _socks = None
-    _PYSOCKS_AVAILABLE = False
+import re, socket, time
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtWidgets import (
@@ -105,74 +99,41 @@ class PortCheckWorker(QObject):
 
 class ProxyPingWorker(QObject):
     """
-    Signal: ok, elapsed_ms, origin_ip, error
+    Signal: ok, elapsed_ms, peer_ip, error
+
+    Kiểm tra proxy bằng cách mở kết nối TCP trực tiếp tới host:port của proxy
+    (không cần gọi bất kỳ URL bên ngoài như httpbin.org).
+    Cách này hoạt động giống hệt proxy.py: dùng socket.create_connection để
+    xác nhận proxy đang lắng nghe và chấp nhận kết nối.
     """
     result = Signal(bool, float, str, str)
 
-    TEST_URL = "http://httpbin.org/ip"
-    TIMEOUT  = 10.0
+    TIMEOUT = 10.0
 
     def __init__(self, proxy: ParsedProxy):
         super().__init__()
         self._proxy = proxy
 
-    def _run_http(self, t0: float):
+    def _run_tcp(self, t0: float):
+        """Kết nối TCP trực tiếp tới host:port của proxy (giống proxy.py)."""
         p = self._proxy
-        auth = f"{p.username}:{p.password}@" if p.has_auth else ""
-        url  = f"{p.protocol}://{auth}{p.host}:{p.port}"
-        proxies = {"http": url, "https": url}
         try:
-            resp = requests.get(self.TEST_URL, proxies=proxies, timeout=self.TIMEOUT)
-            elapsed = (time.monotonic() - t0) * 1000
-            if resp.status_code == 200:
-                try:
-                    origin = resp.json().get("origin", "")
-                except Exception:
-                    origin = ""
-                self.result.emit(True, elapsed, origin, "")
-            else:
-                self.result.emit(False, elapsed, "", f"HTTP {resp.status_code}")
-        except requests.exceptions.ProxyError as exc:
-            self.result.emit(False, (time.monotonic() - t0) * 1000, "", f"Proxy error: {exc}")
-        except requests.exceptions.ConnectTimeout:
-            self.result.emit(False, (time.monotonic() - t0) * 1000, "", "Timed out")
-        except requests.exceptions.ConnectionError as exc:
-            self.result.emit(False, (time.monotonic() - t0) * 1000, "", str(exc))
-        except Exception as exc:
-            self.result.emit(False, (time.monotonic() - t0) * 1000, "", str(exc))
-
-    def _run_socks(self, t0: float):
-        if not _PYSOCKS_AVAILABLE:
-            self.result.emit(False, 0.0, "", "PySocks not installed (pip install PySocks).")
-            return
-        p         = self._proxy
-        socks_type = _socks.SOCKS5 if p.protocol == "socks5" else _socks.SOCKS4
-        try:
-            sock = _socks.socksocket(socket.AF_INET, socket.SOCK_STREAM)
-            if p.has_auth:
-                sock.set_proxy(socks_type, p.host, p.port,
-                               username=p.username, password=p.password)
-            else:
-                sock.set_proxy(socks_type, p.host, p.port)
-            sock.settimeout(self.TIMEOUT)
-            sock.connect(("www.google.com", 80))
-            elapsed = (time.monotonic() - t0) * 1000
-            peer    = sock.getpeername()[0]
-            sock.close()
-            self.result.emit(True, elapsed, peer, "")
+            with socket.create_connection((p.host, p.port), timeout=self.TIMEOUT) as sock:
+                elapsed = (time.monotonic() - t0) * 1000
+                peer_ip = sock.getpeername()[0]
+                self.result.emit(True, elapsed, peer_ip, "")
         except socket.timeout:
             self.result.emit(False, (time.monotonic() - t0) * 1000, "", "Timed out")
         except ConnectionRefusedError:
             self.result.emit(False, (time.monotonic() - t0) * 1000, "", "Connection refused")
+        except OSError as exc:
+            self.result.emit(False, (time.monotonic() - t0) * 1000, "", str(exc))
         except Exception as exc:
             self.result.emit(False, (time.monotonic() - t0) * 1000, "", str(exc))
 
     def run(self):
         t0 = time.monotonic()
-        if self._proxy.protocol in ("socks4", "socks5"):
-            self._run_socks(t0)
-        else:
-            self._run_http(t0)
+        self._run_tcp(t0)
 
 def _small_btn_style(accent: bool = False, danger: bool = False) -> str:
     if accent:

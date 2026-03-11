@@ -1,4 +1,4 @@
-import sys, json, requests, time, os, csv, socket, uuid
+import sys, json, requests, time, os, csv, socket, uuid, threading
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
 from stats import stats_collector, StatsModal
@@ -403,10 +403,12 @@ class FetchWorker(QObject):
             self.error.emit(str(exc))
 
 # ─── Proxy check worker ────────────────────────────────────────────────────────
-class ProxyCheckWorker(QObject):
-    result = Signal(bool, float, str)   # alive, elapsed_ms (-1 if failed), response_ip
+PROXY_CHECK_TIMEOUT    = 8.0    # seconds — TCP connect timeout per proxy
+PROXY_CHECK_CONCURRENCY = 500   # max simultaneous TCP check threads (mirrors proxy.py)
+_check_semaphore = threading.Semaphore(PROXY_CHECK_CONCURRENCY)
 
-    TEST_URL = "http://httpbin.org/ip"
+class ProxyCheckWorker(QObject):
+    result = Signal(bool, float, str)   # alive, elapsed_ms (-1 if failed), peer_ip
 
     def __init__(self, proxy_str: str):
         super().__init__()
@@ -414,23 +416,28 @@ class ProxyCheckWorker(QObject):
 
     def run(self):
         try:
-            proxies = {
-                "http":  f"http://{self._proxy}",
-                "https": f"http://{self._proxy}",
-            }
-            t0 = time.monotonic()
-            resp = requests.get(self.TEST_URL, proxies=proxies, timeout=8)
-            elapsed = (time.monotonic() - t0) * 1000
-            if resp.status_code == 200:
-                try:
-                    origin = resp.json().get("origin", "")
-                except Exception:
-                    origin = ""
-                self.result.emit(True, elapsed, origin)
-            else:
-                self.result.emit(False, elapsed, "")
-        except Exception:
+            host, port_str = self._proxy.rsplit(":", 1)
+            port = int(port_str)
+        except (ValueError, AttributeError):
             self.result.emit(False, -1.0, "")
+            return
+
+        with _check_semaphore:
+            t0 = time.monotonic()
+            try:
+                with socket.create_connection((host, port),
+                                              timeout=PROXY_CHECK_TIMEOUT) as sock:
+                    elapsed = (time.monotonic() - t0) * 1000
+                    peer_ip = sock.getpeername()[0]
+                    self.result.emit(True, elapsed, peer_ip)
+            except socket.timeout:
+                self.result.emit(False, (time.monotonic() - t0) * 1000, "")
+            except ConnectionRefusedError:
+                self.result.emit(False, (time.monotonic() - t0) * 1000, "")
+            except OSError:
+                self.result.emit(False, (time.monotonic() - t0) * 1000, "")
+            except Exception:
+                self.result.emit(False, -1.0, "")
 
 # ─── Refresh worker (re-fetch one proxy slot by its original params) ───────────
 class RefreshWorker(QObject):
@@ -484,7 +491,7 @@ class PortPreCheckWorker(QObject):
 class GeoCheckWorker(QObject):
     """
     1. Ping proxy by sending request through it to httpbin.org/ip
-    2. Extract origin IP from response
+    2. Extract origin IP (public IP of the proxy) from response
     3. Call http://ip-api.com/json/<IP> to retrieve geo info.
 
     Signals
@@ -503,7 +510,7 @@ class GeoCheckWorker(QObject):
         self._proxy = proxy_str   # "ip:port"
 
     def run(self):
-        # ── Step 1: Ping proxy (same as ProxyCheckWorker) ─────────────────
+        # ── Step 1: Ping proxy to get its public IP ────────────────────────
         try:
             proxies = {
                 "http":  f"http://{self._proxy}",
@@ -528,7 +535,7 @@ class GeoCheckWorker(QObject):
             self.result.emit(False, elapsed, "", "", "", "", "", "", str(exc))
             return
 
-        # ── Step 2: Geo lookup ─────────────────────────────────────────────
+        # ── Step 2: Geo lookup using public proxy IP ───────────────────────
         try:
             geo_resp = requests.get(
                 self.GEO_URL.format(ip=origin),
@@ -617,12 +624,12 @@ class ProxyCard(QWidget):
         ip_copy_layout.addWidget(self._copy_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self._response_ip_lbl = QLabel()
+        self._response_ip_lbl.setObjectName("responseIp")
+        self._response_ip_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         response_ip = self._proxy_dict.get("response_ip")
         if response_ip:
             self._response_ip_lbl.setText(f" → {response_ip}")
-            self._response_ip_lbl.setObjectName("responseIp")
-            self._response_ip_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            ip_copy_layout.addWidget(self._response_ip_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
+        ip_copy_layout.addWidget(self._response_ip_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # No longer need the response IP label since main label now shows the actual proxy IP
         ip_copy_layout.addStretch()
@@ -859,8 +866,69 @@ class ProxyCard(QWidget):
         delete_proxy_from_file(proxy_id=self._proxy_id(), ip=ip, port=port)
         self.deleted.emit(self)
 
+    # ── TCP port check (fast, used after refresh to confirm port is open) ──
+    def _do_tcp_check(self):
+        """Quick TCP connect to 127.0.0.1:{port} — does NOT go through httpbin."""
+        if self._check_thread is not None and self._check_thread.isRunning():
+            return
+
+        _, port = self._ip_port()
+        if not port:
+            return
+        try:
+            port_int = int(port)
+        except (ValueError, TypeError):
+            return
+
+        self._check_btn.setEnabled(False)
+        self._refresh_btn.setEnabled(False)
+        self._status_lbl.setObjectName("statusChecking")
+        self._status_lbl.setText("… checking")
+        self._status_lbl.setStyleSheet("")
+        self._ping_lbl.setText("")
+
+        thread = QThread()
+        worker = PortPreCheckWorker("127.0.0.1", port_int, timeout=5.0)
+        worker.moveToThread(thread)
+
+        self._check_thread = thread
+        self._check_worker = worker
+
+        thread.started.connect(worker.run)
+        worker.result.connect(self._on_tcp_check_result)
+        worker.result.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_check_thread_finished)
+        thread.start()
+
+    def _on_tcp_check_result(self, alive: bool, elapsed_ms: float, peer_ip: str, host: str, port: int):
+        self._check_btn.setEnabled(True)
+        self._refresh_btn.setEnabled(True)
+        if alive:
+            self._status_lbl.setObjectName("statusAlive")
+            self._status_lbl.setText("● Alive")
+            self._ping_lbl.setText(f"{elapsed_ms:.0f} ms")
+            self._proxy_dict["ping_ms"] = round(elapsed_ms, 1)
+            stats_collector.record_ping(elapsed_ms)
+            ip, p = self._ip_port()
+            update_proxy_in_file(
+                proxy_id=self._proxy_id(), ip=ip, port=p,
+                updates={"ping_ms": round(elapsed_ms, 1)},
+            )
+        else:
+            self._status_lbl.setObjectName("statusDead")
+            self._status_lbl.setText("✕ Dead")
+            self._ping_lbl.setText("")
+        self._status_lbl.style().unpolish(self._status_lbl)
+        self._status_lbl.style().polish(self._status_lbl)
+
     # ── Check ──
     def _do_check(self):
+        # Prevent starting a new check while one is already running
+        if self._check_thread is not None and self._check_thread.isRunning():
+            return
+
         _, port = self._ip_port()
         if not port:
             return
@@ -870,27 +938,43 @@ class ProxyCard(QWidget):
         if fresh_ip != self._local_ip:
             print(f"[ProxyCard] Local IP changed: {self._local_ip} → {fresh_ip}")
             self._local_ip = fresh_ip
-            # Update the displayed proxy string on the card label
-            self._ip_lbl.setText(f"{fresh_ip}:{port}")
 
         proxy_str = f"{self._local_ip}:{port}"
         self._check_btn.setEnabled(False)
+        self._refresh_btn.setEnabled(False)
         self._status_lbl.setObjectName("statusChecking")
         self._status_lbl.setText("… checking")
-        self._status_lbl.setStyleSheet("")   # force re-read from QSS
+        self._status_lbl.setStyleSheet("")
         self._ping_lbl.setText("")
 
-        self._check_thread = QThread()
-        self._check_worker = ProxyCheckWorker(proxy_str)
-        self._check_worker.moveToThread(self._check_thread)
-        self._check_thread.started.connect(self._check_worker.run)
-        self._check_worker.result.connect(self._on_check_result)
-        self._check_worker.result.connect(self._check_thread.quit)
-        self._check_thread.finished.connect(self._check_thread.deleteLater)
-        self._check_thread.start()
+        thread = QThread()
+        worker = ProxyCheckWorker(proxy_str)
+        worker.moveToThread(thread)
+
+        # Keep hard references so Qt doesn't GC them before the thread finishes
+        self._check_thread = thread
+        self._check_worker = worker
+
+        thread.started.connect(worker.run)
+        worker.result.connect(self._on_check_result)
+        # quit the thread loop after result, then clean up
+        worker.result.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        # Clear our refs only after the thread is truly done
+        thread.finished.connect(self._on_check_thread_finished)
+        thread.start()
+
+    def _on_check_thread_finished(self):
+        self._check_thread = None
+        self._check_worker = None
 
     def _on_check_result(self, alive: bool, elapsed: float, response_ip: str = ""):
+        # NOTE: do NOT null _check_thread/_check_worker here — they are cleared by
+        # _on_check_thread_finished which fires after thread.finished, ensuring
+        # Qt's deleteLater can still reach the C++ objects safely.
         self._check_btn.setEnabled(True)
+        self._refresh_btn.setEnabled(True)
         if alive:
             self._status_lbl.setObjectName("statusAlive")
             self._status_lbl.setText("● Alive")
@@ -903,11 +987,10 @@ class ProxyCard(QWidget):
             updates: dict = {}
             if elapsed >= 0:
                 updates["ping_ms"] = elapsed
-            if response_ip:
-                self._proxy_dict["response_ip"] = response_ip
-                # Update response IP label
-                self._response_ip_lbl.setText(f" → {response_ip}")
-                updates["response_ip"] = response_ip
+            # NOTE: Do NOT update response_ip from TCP check result — the peer_ip here
+            # is the local proxy port's peer (127.0.0.1 / LAN IP), not the proxy's
+            # public IP. The public IP is set by geo-check (update_geo_data) and
+            # should not be overwritten by a plain TCP port-open check.
             if updates:
                 update_proxy_in_file(proxy_id=self._proxy_id(), ip=ip, port=port, updates=updates)
             was_auto = self._auto_check_triggered
@@ -931,6 +1014,13 @@ class ProxyCard(QWidget):
 
     # ── Refresh ──
     def _do_refresh(self):
+        # Prevent starting a new refresh while one is already running
+        if self._refresh_thread is not None and self._refresh_thread.isRunning():
+            return
+        # Also prevent refresh while a check is running
+        if self._check_thread is not None and self._check_thread.isRunning():
+            return
+
         # Build API params from metadata stored in proxy_dict
         port = self._proxy_dict.get("port", "")
 
@@ -946,23 +1036,36 @@ class ProxyCard(QWidget):
         }
 
         self._refresh_btn.setEnabled(False)
+        self._check_btn.setEnabled(False)
         self._status_lbl.setObjectName("statusChecking")
         self._status_lbl.setText("… fetching")
         self._status_lbl.style().unpolish(self._status_lbl)
         self._status_lbl.style().polish(self._status_lbl)
 
-        self._refresh_thread = QThread()
-        self._refresh_worker = RefreshWorker(params, self._api_base_fn())
-        self._refresh_worker.moveToThread(self._refresh_thread)
-        self._refresh_thread.started.connect(self._refresh_worker.run)
-        self._refresh_worker.finished.connect(self._on_refresh_done)
-        self._refresh_worker.error.connect(self._on_refresh_error)
-        self._refresh_worker.finished.connect(self._refresh_thread.quit)
-        self._refresh_worker.error.connect(self._refresh_thread.quit)
-        self._refresh_thread.start()
+        thread = QThread()
+        worker = RefreshWorker(params, self._api_base_fn())
+        worker.moveToThread(thread)
+
+        self._refresh_thread = thread
+        self._refresh_worker = worker
+
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_refresh_done)
+        worker.error.connect(self._on_refresh_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_refresh_thread_finished)
+        thread.start()
+
+    def _on_refresh_thread_finished(self):
+        self._refresh_thread = None
+        self._refresh_worker = None
 
     def _on_refresh_done(self, resp):
         self._refresh_btn.setEnabled(True)
+        self._check_btn.setEnabled(True)
         was_auto = self._auto_refresh_pending
         self._auto_refresh_pending = False
         if resp.status_code != 200:
@@ -975,27 +1078,35 @@ class ProxyCard(QWidget):
                 self.auto_check_done.emit(self)
             return
 
-        content_type = resp.headers.get('content-type', '').lower()
         try:
             text = resp.text.strip()
             data = None
 
-            # Try JSON parse first
-            if 'json' in content_type:
-                try:
-                    data = resp.json()
-                    if isinstance(data, str):
-                        ip, port = data.split(':', 1) if ':' in data else (data, '')
-                        data = {"ip": ip, "port": port}
-                except Exception:
-                    data = None  # fallback to plain text
+            # Always try JSON first (regardless of content-type header)
+            try:
+                data = resp.json()
+                # If the JSON is a plain "ip:port" string
+                if isinstance(data, str):
+                    if ':' in data:
+                        ip, port = data.split(':', 1)
+                        data = {"ip": ip.strip(), "port": port.strip()}
+                    else:
+                        data = None  # not usable
+            except Exception:
+                data = None  # not JSON — fall through to plain-text parse
 
-            # Plain text / JSON parse failed → try "ip:port" format
+            # Plain text fallback → try "ip:port" format (possibly multi-line)
             if data is None:
-                if ':' in text:
-                    ip, port = text.split(':', 1)
-                    data = {"ip": ip.strip(), "port": port.strip()}
+                lines = [l.strip() for l in text.splitlines() if l.strip()]
+                proxies_from_text = []
+                for line in lines:
+                    if ':' in line:
+                        ip, port = line.split(':', 1)
+                        proxies_from_text.append({"ip": ip.strip(), "port": port.strip()})
+                if proxies_from_text:
+                    data = proxies_from_text
                 else:
+                    print(f"[DEBUG] Refresh – unrecognised format. body={text[:300]!r}")
                     stats_collector.record_refresh_fail()
                     self._status_lbl.setObjectName("statusDead")
                     self._status_lbl.setText("✕ Bad format")
@@ -1049,8 +1160,10 @@ class ProxyCard(QWidget):
         self.refreshed.emit(self, new_proxy)
 
     def _on_refresh_error(self, msg: str):
+        # NOTE: thread/worker refs are cleared by _on_refresh_thread_finished
         stats_collector.record_refresh_fail()
         self._refresh_btn.setEnabled(True)
+        self._check_btn.setEnabled(True)
         was_auto = self._auto_refresh_pending
         self._auto_refresh_pending = False
         self._status_lbl.setObjectName("statusDead")
@@ -2532,14 +2645,17 @@ class ProxyApp(QMainWindow):
         new_card.deleted.connect(self._on_card_deleted)
         new_card.refreshed.connect(self._on_card_refreshed)
         new_card.auto_check_done.connect(self._on_auto_check_card_done)
-        new_card.update_button_visibility(self._auto_check_enabled)  # Set visibility for new card
+        new_card.update_button_visibility(self._auto_check_enabled)
         self._result_layout.insertWidget(idx, new_card)
 
-        # Ping the new proxy to confirm it's alive.
-        # If auto-check is active, mark it so a failed check triggers another refresh.
+        # After a refresh, do a fast TCP port check instead of a full httpbin tunnel
+        # check, so we confirm the port is open without depending on an external site.
+        # If auto-check is active, a failed TCP check will trigger another refresh cycle.
         if self._auto_check_enabled:
             new_card._auto_check_triggered = True
-        new_card._do_check()
+            new_card._do_check()   # auto-check mode: full check so failed → refresh again
+        else:
+            new_card._do_tcp_check()   # manual refresh: just verify the port is open
 
     # ── Status (thread-safe) ─────────────────────────────────────────────────
     def _set_status(self, msg: str, color: str):
@@ -2698,8 +2814,18 @@ class ProxyApp(QMainWindow):
 
         self._auto_check_pending = len(cards)
         for widget in cards:
+            # Skip cards already running a check or refresh
+            if ((widget._check_thread is not None and widget._check_thread.isRunning()) or
+                    (widget._refresh_thread is not None and widget._refresh_thread.isRunning())):
+                # Count it as done so pending counter stays consistent
+                self._auto_check_pending = max(0, self._auto_check_pending - 1)
+                continue
             widget._auto_check_triggered = True
             widget._do_check()
+
+        # If all cards were busy, pending will be 0 — restart timer immediately
+        if self._auto_check_pending == 0:
+            self._restart_auto_check_timer()
 
     def _on_auto_check_card_done(self, card):
         """Called when a single card finishes its auto-check cycle (alive or refresh done)."""
@@ -2718,7 +2844,10 @@ class ProxyApp(QMainWindow):
         self._update_countdown_display()
 
     def _bulk_check(self):
-        """Check all proxy cards at once."""
+        """Check all proxy cards concurrently (mirrors proxy.py concurrency model).
+        Each card spins up its own QThread; _check_semaphore inside
+        ProxyCheckWorker caps simultaneous TCP connections at PROXY_CHECK_CONCURRENCY.
+        """
         count = self._result_layout.count()
         if count <= 1:
             return
@@ -2732,7 +2861,7 @@ class ProxyApp(QMainWindow):
                     widget._do_check()
                     checked += 1
         if checked:
-            self._set_status(f"⚡ Checking {checked} proxies…", PALETTE['accent2'])
+            self._set_status(f"⚡ Checking {checked} proxies… (concurrency={PROXY_CHECK_CONCURRENCY})", PALETTE['accent2'])
 
     def _bulk_refresh(self):
         """Refresh all proxy cards at once."""

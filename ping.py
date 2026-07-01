@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import re, socket, time
+import requests
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel, QLineEdit,
+    QDialog, QHBoxLayout, QLabel,
     QPushButton, QVBoxLayout, QWidget, QFrame, QComboBox,
+    QPlainTextEdit, QTabWidget,
 )
 
 from shared import PALETTE
@@ -49,6 +51,13 @@ _PROTO_MAP = {
     "socks5h": "socks5",
 }
 
+PROXY_PING_TIMEOUT = 10.0
+PROXY_TEST_URL = "http://httpbin.org/ip"
+PROXY_GEO_URL = (
+    "http://ip-api.com/json/{ip}"
+    "?fields=status,message,country,countryCode,regionName,city,isp,org,as,timezone,query"
+)
+
 def parse_proxy(raw: str, default_protocol: str = "http") -> ParsedProxy | None:
     raw = raw.strip()
     m = _PROXY_RE.match(raw)
@@ -72,68 +81,208 @@ def parse_proxy(raw: str, default_protocol: str = "http") -> ParsedProxy | None:
         password=m.group("pwd")  or "",
     )
 
-class PortCheckWorker(QObject):
-    result = Signal(bool, float, str, str)  # ok, ms, error, peer_ip
+def _split_batch_text(text: str) -> list[str]:
+    return [part.strip() for part in re.split(r"[\n,;]+", text) if part.strip()]
 
-    def __init__(self, host: str, port: int, timeout: float = 5.0):
+def _parse_port_target(raw: str) -> tuple[str, str, int, str | None]:
+    if ":" in raw:
+        parts = raw.rsplit(":", 1)
+        host, port_str = parts[0].strip(), parts[1].strip()
+    else:
+        host, port_str = current_ipv4(), raw
+
+    try:
+        port = int(port_str)
+        if not (1 <= port <= 65535):
+            raise ValueError
+    except ValueError:
+        return raw, "", 0, "Invalid port number (1-65535)"
+
+    if not host:
+        return raw, "", 0, "Missing host"
+
+    return f"{host}:{port}", host, port, None
+
+def _check_tcp(host: str, port: int, timeout: float) -> tuple[bool, float, str, str]:
+    t0 = time.monotonic()
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            elapsed = (time.monotonic() - t0) * 1000
+            return True, elapsed, "", sock.getpeername()[0]
+    except socket.timeout:
+        return False, (time.monotonic() - t0) * 1000, "Timed out", ""
+    except ConnectionRefusedError:
+        return False, (time.monotonic() - t0) * 1000, "Connection refused", ""
+    except OSError as exc:
+        return False, (time.monotonic() - t0) * 1000, str(exc), ""
+    except Exception as exc:
+        return False, (time.monotonic() - t0) * 1000, str(exc), ""
+
+def _proxy_url(proxy: ParsedProxy) -> str:
+    auth = ""
+    if proxy.username:
+        auth = f"{proxy.username}:{proxy.password}@"
+    return f"{proxy.protocol}://{auth}{proxy.host}:{proxy.port}"
+
+def _origin_ip_from_response(resp: requests.Response) -> str:
+    try:
+        origin = str(resp.json().get("origin", "")).strip()
+    except Exception:
+        return ""
+    if "," in origin:
+        origin = origin.split(",", 1)[0].strip()
+    return origin
+
+def _lookup_ip_geo(ip: str) -> dict:
+    if not ip:
+        return {}
+    try:
+        resp = requests.get(PROXY_GEO_URL.format(ip=ip), timeout=PROXY_PING_TIMEOUT)
+        if resp.status_code != 200:
+            return {}
+        geo = resp.json()
+        if geo.get("status") != "success":
+            return {"geo_error": geo.get("message", "Geo lookup failed")}
+        return geo
+    except Exception as exc:
+        return {"geo_error": str(exc)}
+
+def _probe_proxy(proxy: ParsedProxy) -> dict:
+    url = _proxy_url(proxy)
+    proxies = {"http": url, "https": url}
+    t0 = time.monotonic()
+    try:
+        resp = requests.get(PROXY_TEST_URL, proxies=proxies, timeout=PROXY_PING_TIMEOUT)
+        elapsed = (time.monotonic() - t0) * 1000
+    except Exception as exc:
+        return {
+            "label": proxy.display,
+            "alive": False,
+            "elapsed_ms": (time.monotonic() - t0) * 1000,
+            "error": str(exc),
+        }
+
+    if resp.status_code != 200:
+        return {
+            "label": proxy.display,
+            "alive": False,
+            "elapsed_ms": elapsed,
+            "error": f"HTTP {resp.status_code}",
+        }
+
+    response_ip = _origin_ip_from_response(resp)
+    if not response_ip:
+        return {
+            "label": proxy.display,
+            "alive": False,
+            "elapsed_ms": elapsed,
+            "error": "No response IP",
+        }
+
+    geo = _lookup_ip_geo(response_ip)
+    return {
+        "label": proxy.display,
+        "alive": True,
+        "elapsed_ms": elapsed,
+        "response_ip": response_ip,
+        "country": geo.get("country", ""),
+        "country_code": geo.get("countryCode", ""),
+        "region": geo.get("regionName", ""),
+        "city": geo.get("city", ""),
+        "asn": geo.get("as", ""),
+        "isp": geo.get("isp", ""),
+        "org": geo.get("org", ""),
+        "timezone": geo.get("timezone", ""),
+        "info": geo.get("geo_error", "OK"),
+    }
+
+def _value_or_dash(value) -> str:
+    text = str(value or "").strip()
+    return text if text else "-"
+
+def _proxy_location(result: dict) -> str:
+    country = str(result.get("country", "")).strip()
+    country_code = str(result.get("country_code", "")).strip()
+    if country and country_code:
+        country_label = f"{country} ({country_code})"
+    else:
+        country_label = country or country_code
+    parts = [
+        str(result.get("city", "")).strip(),
+        str(result.get("region", "")).strip(),
+        country_label,
+    ]
+    return ", ".join(part for part in parts if part) or "-"
+
+def _format_proxy_result_line(result: dict) -> str:
+    index = int(result.get("index", 0) or 0)
+    prefix = f"{index:02d}" if index else "--"
+    alive = bool(result.get("alive"))
+    status = "✅ alive" if alive else "❌ dead"
+    elapsed = result.get("elapsed_ms", 0.0) or 0.0
+    speed = f"{elapsed:.0f} ms" if elapsed > 0 else "-"
+    label = _value_or_dash(result.get("label"))
+    response_ip = _value_or_dash(result.get("response_ip"))
+    asn = _value_or_dash(result.get("asn"))
+    isp = _value_or_dash(result.get("isp") or result.get("org"))
+    timezone = _value_or_dash(result.get("timezone"))
+    info = _value_or_dash(result.get("info") if alive else result.get("error"))
+    return (
+        f"{prefix} {status} | speed {speed} | {label} | "
+        f"IP response {response_ip} | location {_proxy_location(result)} | "
+        f"ASN {asn} | ISP {isp} | timezone {timezone} | info {info}"
+    )
+
+class PortBatchWorker(QObject):
+    item_result = Signal(str, bool, float, str, str)  # target, ok, ms, error, peer_ip
+    progress = Signal(int, int)
+    finished = Signal()
+
+    def __init__(self, targets: list[str], timeout: float = 5.0):
         super().__init__()
-        self._host    = host
-        self._port    = port
+        self._targets = targets
         self._timeout = timeout
 
     def run(self):
-        t0 = time.monotonic()
-        try:
-            with socket.create_connection((self._host, self._port),
-                                          timeout=self._timeout) as sock:
-                elapsed = (time.monotonic() - t0) * 1000
-                peer_ip = sock.getpeername()[0]
-                self.result.emit(True, elapsed, "", peer_ip)
-        except socket.timeout:
-            self.result.emit(False, (time.monotonic() - t0) * 1000, "Timed out", "")
-        except ConnectionRefusedError:
-            self.result.emit(False, (time.monotonic() - t0) * 1000, "Connection refused", "")
-        except OSError as exc:
-            self.result.emit(False, (time.monotonic() - t0) * 1000, str(exc), "")
+        total = len(self._targets)
+        for idx, raw in enumerate(self._targets, start=1):
+            label, host, port, error = _parse_port_target(raw)
+            if error:
+                self.item_result.emit(label, False, 0.0, error, "")
+            else:
+                ok, elapsed, err, peer_ip = _check_tcp(host, port, self._timeout)
+                self.item_result.emit(label, ok, elapsed, err, peer_ip)
+            self.progress.emit(idx, total)
+        self.finished.emit()
 
+class ProxyPingBatchWorker(QObject):
+    item_result = Signal(dict)
+    progress = Signal(int, int)
+    finished = Signal()
 
-class ProxyPingWorker(QObject):
-    """
-    Signal: ok, elapsed_ms, peer_ip, error
-
-    Kiểm tra proxy bằng cách mở kết nối TCP trực tiếp tới host:port của proxy
-    (không cần gọi bất kỳ URL bên ngoài như httpbin.org).
-    Cách này hoạt động giống hệt proxy.py: dùng socket.create_connection để
-    xác nhận proxy đang lắng nghe và chấp nhận kết nối.
-    """
-    result = Signal(bool, float, str, str)
-
-    TIMEOUT = 10.0
-
-    def __init__(self, proxy: ParsedProxy):
+    def __init__(self, entries: list[str], default_protocol: str):
         super().__init__()
-        self._proxy = proxy
-
-    def _run_tcp(self, t0: float):
-        """Kết nối TCP trực tiếp tới host:port của proxy (giống proxy.py)."""
-        p = self._proxy
-        try:
-            with socket.create_connection((p.host, p.port), timeout=self.TIMEOUT) as sock:
-                elapsed = (time.monotonic() - t0) * 1000
-                peer_ip = sock.getpeername()[0]
-                self.result.emit(True, elapsed, peer_ip, "")
-        except socket.timeout:
-            self.result.emit(False, (time.monotonic() - t0) * 1000, "", "Timed out")
-        except ConnectionRefusedError:
-            self.result.emit(False, (time.monotonic() - t0) * 1000, "", "Connection refused")
-        except OSError as exc:
-            self.result.emit(False, (time.monotonic() - t0) * 1000, "", str(exc))
-        except Exception as exc:
-            self.result.emit(False, (time.monotonic() - t0) * 1000, "", str(exc))
+        self._entries = entries
+        self._default_protocol = default_protocol
 
     def run(self):
-        t0 = time.monotonic()
-        self._run_tcp(t0)
+        total = len(self._entries)
+        for idx, raw in enumerate(self._entries, start=1):
+            proxy = parse_proxy(raw, default_protocol=self._default_protocol)
+            if proxy is None:
+                self.item_result.emit({
+                    "index": idx,
+                    "label": raw,
+                    "alive": False,
+                    "elapsed_ms": 0.0,
+                    "error": "Invalid proxy format",
+                })
+            else:
+                result = _probe_proxy(proxy)
+                result["index"] = idx
+                self.item_result.emit(result)
+            self.progress.emit(idx, total)
+        self.finished.emit()
 
 def _small_btn_style(accent: bool = False, danger: bool = False) -> str:
     if accent:
@@ -153,24 +302,177 @@ def _small_btn_style(accent: bool = False, danger: bool = False) -> str:
         border = PALETTE["border"]
     return (
         f"QPushButton {{ background: {bg}; color: {col}; "
-        f"border: 1.5px solid {border}; border-radius: 8px; "
-        f"padding: 6px 18px; font-size: 9pt; font-weight: 600; }}"
+        f"border: 1px solid {border}; border-radius: 6px; "
+        f"padding: 5px 12px; font-size: 8pt; font-weight: 700; }}"
         f"QPushButton:hover {{ background: {hv}; color: #fff; border-color: {hv}; }}"
         f"QPushButton:pressed {{ background: {PALETTE['accent']}; color: #fff; }}"
         f"QPushButton:disabled {{ opacity: 0.45; }}"
     )
 
-def _result_style(ok: bool) -> str:
-    color = PALETTE["success"] if ok else PALETTE["error"]
-    return (
-        f"color: {color}; font-size: 9pt; font-weight: 600; background: transparent;"
-    )
-
 def _separator() -> QFrame:
     line = QFrame()
     line.setFrameShape(QFrame.Shape.HLine)
-    line.setStyleSheet(f"color: {PALETTE['border']}; margin: 4px 0;")
+    line.setStyleSheet(f"color: {PALETTE['border']}; margin: 6px 0;")
     return line
+
+def _build_tool_shell(
+    widget: QWidget,
+    title_text: str,
+    show_close_button: bool,
+    close_handler,
+    outer_margins: tuple[int, int, int, int],
+) -> tuple[QVBoxLayout, QVBoxLayout]:
+    widget.setObjectName("toolPage")
+    outer = QVBoxLayout(widget)
+    outer.setContentsMargins(*outer_margins)
+    outer.setSpacing(9)
+
+    hdr = QHBoxLayout()
+    title = QLabel(title_text)
+    title.setObjectName("toolTitle")
+    hdr.addWidget(title)
+    hdr.addStretch()
+    if show_close_button:
+        close_btn = QPushButton("✕")
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setFixedSize(24, 24)
+        close_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {PALETTE['subtext']}; "
+            f"border: none; font-size: 10pt; border-radius: 6px; }}"
+            f"QPushButton:hover {{ background: {PALETTE['error']}; color: #fff; }}"
+        )
+        close_btn.clicked.connect(close_handler or widget.close)
+        hdr.addWidget(close_btn)
+    outer.addLayout(hdr)
+    outer.addWidget(_separator())
+    return outer, outer
+
+def _section(text: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setObjectName("toolSection")
+    return lbl
+
+class CheckPortTab(QWidget):
+    def __init__(
+        self,
+        parent=None,
+        show_close_button: bool = False,
+        close_handler=None,
+        outer_margins: tuple[int, int, int, int] = (2, 14, 2, 16),
+    ):
+        super().__init__(parent)
+        self._show_close_button = show_close_button
+        self._close_handler = close_handler
+        self._outer_margins = outer_margins
+
+        self._port_thread: QThread | None = None
+        self._port_worker: PortBatchWorker | None = None
+
+        self._build_ui()
+
+    def _build_ui(self):
+        outer, layout = _build_tool_shell(
+            self,
+            "Check port",
+            self._show_close_button,
+            self._close_handler,
+            self._outer_margins,
+        )
+        layout.addWidget(_section("TCP connection"))
+
+        port_desc = QLabel(
+            "Enter one target per line. Use <b>host:port</b> or just <b>port</b> "
+            "to check against this machine's current IPv4."
+        )
+        port_desc.setWordWrap(True)
+        port_desc.setObjectName("toolHint")
+        layout.addWidget(port_desc)
+
+        self._port_input = QPlainTextEdit()
+        self._port_input.setObjectName("toolTextArea")
+        self._port_input.setPlaceholderText("8.8.8.8:53\n1.1.1.1:443\n2000")
+        self._port_input.setMinimumHeight(92)
+        self._port_input.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        layout.addWidget(self._port_input)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        action_row.addStretch()
+        self._port_clear_btn = QPushButton("✕ Clear")
+        self._port_clear_btn.setFixedHeight(26)
+        self._port_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._port_clear_btn.setStyleSheet(_small_btn_style())
+        self._port_clear_btn.clicked.connect(self._clear_port_results)
+        action_row.addWidget(self._port_clear_btn)
+
+        self._port_btn = QPushButton("⚡ Check all")
+        self._port_btn.setFixedHeight(26)
+        self._port_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._port_btn.setStyleSheet(_small_btn_style(accent=True))
+        self._port_btn.clicked.connect(self._run_port_check)
+        action_row.addWidget(self._port_btn)
+        layout.addLayout(action_row)
+
+        self._port_summary = QLabel("Ready")
+        self._port_summary.setObjectName("toolHint")
+        layout.addWidget(self._port_summary)
+
+        self._port_result = QPlainTextEdit()
+        self._port_result.setObjectName("toolOutput")
+        self._port_result.setReadOnly(True)
+        self._port_result.setMinimumHeight(150)
+        self._port_result.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self._port_result.setPlaceholderText("Results will appear here.")
+        layout.addWidget(self._port_result)
+        if not self._show_close_button:
+            outer.addStretch(1)
+
+    def _clear_port_results(self):
+        self._port_result.clear()
+        self._port_summary.setText("Ready")
+
+    def _run_port_check(self):
+        targets = _split_batch_text(self._port_input.toPlainText())
+        if not targets:
+            self._port_result.setPlainText("⚠ Please enter host:port or a port number.")
+            self._port_summary.setText("No targets")
+            return
+
+        self._port_result.clear()
+        self._port_btn.setEnabled(False)
+        self._port_clear_btn.setEnabled(False)
+        self._port_summary.setText(f"Checking 0/{len(targets)} targets...")
+
+        self._port_thread = QThread()
+        self._port_worker = PortBatchWorker(targets)
+        self._port_worker.moveToThread(self._port_thread)
+        self._port_thread.started.connect(self._port_worker.run)
+        self._port_worker.item_result.connect(self._on_port_item_result)
+        self._port_worker.progress.connect(self._on_port_progress)
+        self._port_worker.finished.connect(self._on_port_batch_finished)
+        self._port_worker.finished.connect(self._port_thread.quit)
+        self._port_worker.finished.connect(self._port_worker.deleteLater)
+        self._port_thread.finished.connect(self._port_thread.deleteLater)
+        self._port_thread.start()
+
+    def _on_port_item_result(self, target: str, connected: bool, elapsed_ms: float,
+                             error: str, resolved_ip: str):
+        if connected:
+            ip_part = f"IP: {resolved_ip}" if resolved_ip else ""
+            self._port_result.appendPlainText(
+                f"✅ {target} · connected · {ip_part} ({elapsed_ms:.0f} ms)"
+            )
+        else:
+            detail = f"  ({error})" if error else ""
+            self._port_result.appendPlainText(f"❌ {target} · cannot connect{detail}")
+
+    def _on_port_progress(self, done: int, total: int):
+        self._port_summary.setText(f"Checking {done}/{total} targets...")
+
+    def _on_port_batch_finished(self):
+        self._port_btn.setEnabled(True)
+        self._port_clear_btn.setEnabled(True)
+        self._port_summary.setText("Done")
 
 class PingTab(QWidget):
     def __init__(
@@ -178,103 +480,34 @@ class PingTab(QWidget):
         parent=None,
         show_close_button: bool = False,
         close_handler=None,
-        outer_margins: tuple[int, int, int, int] = (16, 14, 16, 16),
+        outer_margins: tuple[int, int, int, int] = (2, 14, 2, 16),
     ):
         super().__init__(parent)
         self._show_close_button = show_close_button
         self._close_handler = close_handler
         self._outer_margins = outer_margins
 
-        self._port_thread:  QThread | None = None
-        self._port_worker:  PortCheckWorker | None = None
         self._proxy_thread: QThread | None = None
-        self._proxy_worker: ProxyPingWorker | None = None
+        self._proxy_worker: ProxyPingBatchWorker | None = None
 
         self._build_ui()
 
     def _build_ui(self):
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(*self._outer_margins)
-
-        card = QWidget()
-        card.setObjectName("pingModalCard")
-        card.setStyleSheet(
-            f"QWidget#pingModalCard {{"
-            f"  background: {PALETTE['panel']};"
-            f"  border: 1.5px solid {PALETTE['border']};"
-            f"  border-radius: 14px;"
-            f"}}"
+        outer, layout = _build_tool_shell(
+            self,
+            "Ping",
+            self._show_close_button,
+            self._close_handler,
+            self._outer_margins,
         )
-        outer.addWidget(card)
-
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(14)
-
-        # ── Header ───────────────────────────────────────────────────────────
-        hdr = QHBoxLayout()
-        title = QLabel("🏓  Ping & Port Check")
-        title.setStyleSheet(
-            f"color: {PALETTE['text']}; font-size: 11pt; font-weight: 700; background: transparent;"
-        )
-        hdr.addWidget(title)
-        hdr.addStretch()
-        if self._show_close_button:
-            close_btn = QPushButton("✕")
-            close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            close_btn.setFixedSize(28, 28)
-            close_btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {PALETTE['subtext']}; "
-                f"border: none; font-size: 11pt; border-radius: 6px; }}"
-                f"QPushButton:hover {{ background: {PALETTE['error']}; color: #fff; }}"
-            )
-            close_btn.clicked.connect(self._close_handler or self.close)
-            hdr.addWidget(close_btn)
-        layout.addLayout(hdr)
-
-        layout.addWidget(_separator())
-
-        # ── Port check ───────────────────────────────────────────────────────
-        layout.addWidget(self._section("🔌  TCP Port Check"))
-        port_desc = QLabel(
-            "Enter <b>host:port</b> (e.g., <code>8.8.8.8:53</code>) or just <b>port</b> "
-            "to check direct TCP connection."
-        )
-        port_desc.setWordWrap(True)
-        port_desc.setStyleSheet(f"color: {PALETTE['subtext']}; font-size: 8pt; background: transparent;")
-        layout.addWidget(port_desc)
-
-        port_row = QHBoxLayout()
-        port_row.setSpacing(8)
-        self._port_input = QLineEdit()
-        self._port_input.setPlaceholderText("host:port hoặc port")
-        self._port_input.setFixedHeight(34)
-        self._port_input.returnPressed.connect(self._run_port_check)
-        port_row.addWidget(self._port_input, 1)
-        self._port_btn = QPushButton("Check")
-        self._port_btn.setFixedHeight(34)
-        self._port_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._port_btn.setStyleSheet(_small_btn_style(accent=True))
-        self._port_btn.clicked.connect(self._run_port_check)
-        port_row.addWidget(self._port_btn)
-        layout.addLayout(port_row)
-
-        self._port_result = QLabel("")
-        self._port_result.setWordWrap(True)
-        self._port_result.setMinimumHeight(20)
-        self._port_result.setStyleSheet(f"color: {PALETTE['subtext']}; font-size: 9pt; background: transparent;")
-        layout.addWidget(self._port_result)
-
-        layout.addWidget(_separator())
-
-        layout.addWidget(self._section("🌐  Ping Proxy"))
+        layout.addWidget(_section("Proxy TCP ping"))
 
         proxy_desc = QLabel(
-            "Enter a proxy in <b>any format</b>. "
+            "Enter one proxy per line in <b>any format</b>. "
             "Select the default protocol if the string does not have a scheme."
         )
         proxy_desc.setWordWrap(True)
-        proxy_desc.setStyleSheet(f"color: {PALETTE['subtext']}; font-size: 8pt; background: transparent;")
+        proxy_desc.setObjectName("toolHint")
         layout.addWidget(proxy_desc)
 
         fmt_hint = QLabel(
@@ -285,155 +518,101 @@ class PingTab(QWidget):
             "<code>http://user:pass@host:port</code>"
         )
         fmt_hint.setWordWrap(True)
-        fmt_hint.setStyleSheet(f"color: {PALETTE['accent2']}; font-size: 7.5pt; background: transparent;")
+        fmt_hint.setObjectName("toolFormatHint")
         layout.addWidget(fmt_hint)
+        self._proxy_input = QPlainTextEdit()
+        self._proxy_input.setObjectName("toolTextArea")
+        self._proxy_input.setPlaceholderText(
+            "host:port\nuser:pass@host:port\nsocks5://user:pass@host:port"
+        )
+        self._proxy_input.setMinimumHeight(250)
+        self._proxy_input.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
 
-        proxy_row = QHBoxLayout()
-        proxy_row.setSpacing(8)
+        self._proxy_result = QPlainTextEdit()
+        self._proxy_result.setObjectName("toolOutput")
+        self._proxy_result.setReadOnly(True)
+        self._proxy_result.setMinimumHeight(250)
+        self._proxy_result.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self._proxy_result.setPlaceholderText("Line-by-line results will appear here.")
 
+        io_row = QHBoxLayout()
+        io_row.setSpacing(10)
+        io_row.addWidget(self._proxy_input, 1)
+        io_row.addWidget(self._proxy_result, 1)
+        layout.addLayout(io_row, 1)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
         self._proto_combo = QComboBox()
         self._proto_combo.addItems(["HTTP", "HTTPS", "SOCKS5", "SOCKS4"])
-        self._proto_combo.setFixedHeight(34)
-        self._proto_combo.setFixedWidth(96)
+        self._proto_combo.setFixedHeight(26)
+        self._proto_combo.setFixedWidth(92)
         self._proto_combo.setToolTip(
             "Default protocol — only applies when the proxy string has no scheme"
         )
-        proxy_row.addWidget(self._proto_combo)
+        action_row.addWidget(self._proto_combo)
+        action_row.addStretch()
 
-        self._proxy_input = QLineEdit()
-        self._proxy_input.setPlaceholderText(
-            "host:port  /  user:pass@host:port  /  socks5://user:pass@host:port"
-        )
-        self._proxy_input.setFixedHeight(34)
-        self._proxy_input.returnPressed.connect(self._run_proxy_ping)
-        proxy_row.addWidget(self._proxy_input, 1)
+        self._proxy_clear_btn = QPushButton("✕ Clear")
+        self._proxy_clear_btn.setFixedHeight(26)
+        self._proxy_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._proxy_clear_btn.setStyleSheet(_small_btn_style())
+        self._proxy_clear_btn.clicked.connect(self._clear_proxy_results)
+        action_row.addWidget(self._proxy_clear_btn)
 
-        self._proxy_btn = QPushButton("Ping")
-        self._proxy_btn.setFixedHeight(34)
+        self._proxy_btn = QPushButton("📡 Ping all")
+        self._proxy_btn.setFixedHeight(26)
         self._proxy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._proxy_btn.setStyleSheet(_small_btn_style(accent=True))
         self._proxy_btn.clicked.connect(self._run_proxy_ping)
-        proxy_row.addWidget(self._proxy_btn)
-        layout.addLayout(proxy_row)
+        action_row.addWidget(self._proxy_btn)
+        layout.addLayout(action_row)
 
-        self._proxy_result = QLabel("")
-        self._proxy_result.setWordWrap(True)
-        self._proxy_result.setMinimumHeight(20)
-        self._proxy_result.setStyleSheet(f"color: {PALETTE['subtext']}; font-size: 9pt; background: transparent;")
-        layout.addWidget(self._proxy_result)
+        self._proxy_summary = QLabel("Ready")
+        self._proxy_summary.setObjectName("toolHint")
+        layout.addWidget(self._proxy_summary)
         if not self._show_close_button:
             outer.addStretch(1)
 
-    @staticmethod
-    def _section(text: str) -> QLabel:
-        lbl = QLabel(text)
-        lbl.setStyleSheet(
-            f"color: {PALETTE['accent2']}; font-size: 9pt; font-weight: 700; background: transparent;"
-        )
-        return lbl
-
-    def _warn(self, label: QLabel, msg: str):
-        label.setText(msg)
-        label.setStyleSheet(f"color: {PALETTE['warning']}; font-size: 9pt; background: transparent;")
-
-    def _run_port_check(self):
-        raw = self._port_input.text().strip()
-        if not raw:
-            self._warn(self._port_result, "⚠ Please enter host:port or a port number.")
-            return
-
-        if ":" in raw:
-            parts = raw.rsplit(":", 1)
-            host, port_str = parts[0].strip(), parts[1].strip()
-        else:
-            host, port_str = current_ipv4(), raw
-
-        try:
-            port = int(port_str)
-            if not (1 <= port <= 65535):
-                raise ValueError
-        except ValueError:
-            self._warn(self._port_result, "⚠  Invalid port number (1–65535).")
-            return
-
-        self._port_btn.setEnabled(False)
-        self._port_result.setStyleSheet(f"color: {PALETTE['subtext']}; font-size: 9pt; background: transparent;")
-        self._port_result.setText(f"⏳ Checking {host}:{port} …")
-
-        self._port_thread = QThread()
-        self._port_worker = PortCheckWorker(host, port)
-        self._port_worker.moveToThread(self._port_thread)
-        self._port_thread.started.connect(self._port_worker.run)
-        self._port_worker.result.connect(self._on_port_result)
-        self._port_worker.result.connect(self._port_thread.quit)
-        self._port_thread.finished.connect(self._port_thread.deleteLater)
-        self._port_thread.start()
-
-    def _on_port_result(self, connected: bool, elapsed_ms: float,
-                        error: str, resolved_ip: str):
-        self._port_btn.setEnabled(True)
-        addr = self._port_input.text().strip()
-        if connected:
-            ip_part = f"IP: {resolved_ip}" if resolved_ip else ""
-            self._port_result.setText(
-                f"✅ Connected · {ip_part}({elapsed_ms:.0f} ms)"
-            )
-            self._port_result.setStyleSheet(_result_style(True))
-        else:
-            detail = f"  ({error})" if error else ""
-            self._port_result.setText(f"❌ Cannot connect  —  {addr}{detail}")
-            self._port_result.setStyleSheet(_result_style(False))
+    def _clear_proxy_results(self):
+        self._proxy_result.clear()
+        self._proxy_summary.setText("Ready")
 
     def _run_proxy_ping(self):
-        raw = self._proxy_input.text().strip()
-        if not raw:
-            self._warn(self._proxy_result, "⚠ Please enter a proxy address.")
+        entries = _split_batch_text(self._proxy_input.toPlainText())
+        if not entries:
+            self._proxy_result.setPlainText("⚠ Please enter at least one proxy address.")
+            self._proxy_summary.setText("No proxies")
             return
 
         default_proto = self._proto_combo.currentText().lower()
-        proxy = parse_proxy(raw, default_protocol=default_proto)
-        if proxy is None:
-            self._warn(
-                self._proxy_result,
-                "⚠ Invalid format.\n"
-                "Example:  1.2.3.4:8080  ·  user:pass@1.2.3.4:1080  ·  socks5://1.2.3.4:1080",
-            )
-            return
-
+        self._proxy_result.clear()
         self._proxy_btn.setEnabled(False)
-        self._proxy_result.setStyleSheet(f"color: {PALETTE['subtext']}; font-size: 9pt; background: transparent;")
-        self._proxy_result.setText(f"⏳ Pinging {proxy.display} …")
+        self._proxy_clear_btn.setEnabled(False)
+        self._proxy_summary.setText(f"Pinging 0/{len(entries)} proxies...")
 
         self._proxy_thread = QThread()
-        self._proxy_worker = ProxyPingWorker(proxy)
+        self._proxy_worker = ProxyPingBatchWorker(entries, default_proto)
         self._proxy_worker.moveToThread(self._proxy_thread)
         self._proxy_thread.started.connect(self._proxy_worker.run)
-        self._proxy_worker.result.connect(self._on_proxy_result)
-        self._proxy_worker.result.connect(self._proxy_thread.quit)
+        self._proxy_worker.item_result.connect(self._on_proxy_item_result)
+        self._proxy_worker.progress.connect(self._on_proxy_progress)
+        self._proxy_worker.finished.connect(self._on_proxy_batch_finished)
+        self._proxy_worker.finished.connect(self._proxy_thread.quit)
+        self._proxy_worker.finished.connect(self._proxy_worker.deleteLater)
         self._proxy_thread.finished.connect(self._proxy_thread.deleteLater)
         self._proxy_thread.start()
 
-    def _on_proxy_result(self, alive: bool, elapsed_ms: float,
-                         origin_ip: str, error: str):
-        self._proxy_btn.setEnabled(True)
-        raw   = self._proxy_input.text().strip()
-        proto = self._proto_combo.currentText().lower()
-        proxy = parse_proxy(raw, default_protocol=proto)
-        label = proxy.display if proxy else raw
+    def _on_proxy_item_result(self, result: dict):
+        self._proxy_result.appendPlainText(_format_proxy_result_line(result))
 
-        if alive:
-            ip_part = f"  ·  origin IP: {origin_ip}" if origin_ip else ""
-            self._proxy_result.setText(
-                f"✅ Alive  —  {label}  responded in {elapsed_ms:.0f} ms{ip_part}"
-            )
-            self._proxy_result.setStyleSheet(_result_style(True))
-        else:
-            detail = f"  ({error})" if error else ""
-            timing = f"  (after {elapsed_ms:.0f} ms)" if elapsed_ms > 0 else ""
-            self._proxy_result.setText(
-                f"❌ Dead  —  {label}  no response{timing}{detail}"
-            )
-            self._proxy_result.setStyleSheet(_result_style(False))
+    def _on_proxy_progress(self, done: int, total: int):
+        self._proxy_summary.setText(f"Pinging {done}/{total} proxies...")
+
+    def _on_proxy_batch_finished(self):
+        self._proxy_btn.setEnabled(True)
+        self._proxy_clear_btn.setEnabled(True)
+        self._proxy_summary.setText("Done")
 
 class PingModal(QDialog):
     def __init__(self, parent=None):
@@ -446,14 +625,27 @@ class PingModal(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(
+        tabs = QTabWidget()
+        tabs.setObjectName("mainTabs")
+        tabs.addTab(
             PingTab(
-                parent=self,
+                parent=tabs,
                 show_close_button=True,
                 close_handler=self.close,
-                outer_margins=(0, 0, 0, 0),
-            )
+                outer_margins=(0, 8, 0, 0),
+            ),
+            "Ping",
         )
+        tabs.addTab(
+            CheckPortTab(
+                parent=tabs,
+                show_close_button=True,
+                close_handler=self.close,
+                outer_margins=(0, 8, 0, 0),
+            ),
+            "Check port",
+        )
+        layout.addWidget(tabs)
 
     def showEvent(self, event):
         super().showEvent(event)

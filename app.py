@@ -2,8 +2,8 @@ import sys, json, requests, time, os, csv, socket, uuid, threading
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
 from stats import stats_collector, StatsModal
-from ping import PingTab
-from PySide6.QtGui     import QColor, QFont, QIcon, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout, QPainterPath, QBrush, QPixmap, QPolygon
+from ping import CheckPortTab, PingTab
+from PySide6.QtGui     import QColor, QFont, QIcon, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout, QPainterPath, QBrush, QPixmap, QPolygon, QPen
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QLineEdit, QComboBox, QPushButton,
@@ -12,11 +12,51 @@ from PySide6.QtWidgets import (
     QSlider, QFileDialog, QTabWidget
 )
 
-from shared import COUNTRY_DATA, PALETTE, STYLESHEET
+from shared import (
+    COUNTRY_DATA,
+    PALETTE,
+    STYLESHEET,
+    toolbar_button_style,
+    toolbar_search_style,
+)
 from utils import current_ipv4
 
 ALL_NETWORKS = sorted({n for d in COUNTRY_DATA.values() for n in d["networks"]})
 API_BASE     = "http://localhost:1998/api"
+
+def make_tab_icon(kind: str) -> QIcon:
+    pix = QPixmap(18, 18)
+    pix.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pix)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    accent = QColor(PALETTE["accent"])
+    accent2 = QColor(PALETTE["accent2"])
+    panel = QColor(PALETTE["entry_bg"])
+    pen = QPen(accent2 if kind != "cliproxy" else accent, 1.8)
+    painter.setPen(pen)
+    painter.setBrush(panel)
+
+    if kind == "cliproxy":
+        painter.drawRoundedRect(QRect(3, 4, 12, 10), 3, 3)
+        painter.setBrush(accent)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(5, 7, 3, 3)
+        painter.drawEllipse(10, 7, 3, 3)
+    elif kind == "ping":
+        painter.drawEllipse(4, 4, 10, 10)
+        painter.drawLine(9, 2, 9, 5)
+        painter.drawLine(9, 13, 9, 16)
+        painter.drawLine(2, 9, 5, 9)
+        painter.drawLine(13, 9, 16, 9)
+    else:
+        painter.drawLine(5, 3, 5, 11)
+        painter.drawLine(13, 3, 13, 11)
+        painter.drawLine(5, 8, 13, 8)
+        painter.drawRoundedRect(QRect(6, 11, 6, 4), 2, 2)
+
+    painter.end()
+    return QIcon(pix)
 
 if getattr(sys, 'frozen', False):
     _BUNDLE_DIR = sys._MEIPASS
@@ -1264,8 +1304,8 @@ class AutoComboBox(QComboBox):
         QAbstractItemView {{
             background: {PALETTE['panel']};
             color: {PALETTE['text']};
-            border: 1.5px solid {PALETTE['border_focus']};
-            border-radius: 8px;
+            border: 1px solid {PALETTE['border_focus']};
+            border-radius: 7px;
             selection-background-color: {PALETTE['accent']};
             selection-color: #fff;
             padding: 4px;
@@ -1444,8 +1484,8 @@ class TimerPopover(QWidget):
         self.setStyleSheet(f"""
             QWidget#timerPopover {{
                 background: {PALETTE['card']};
-                border: 1.5px solid {PALETTE['border']};
-                border-radius: 10px;
+                border: 1px solid {PALETTE['border']};
+                border-radius: 8px;
             }}
             QLabel#timerPopoverLbl {{
                 color: {PALETTE['label']};
@@ -1466,11 +1506,11 @@ class TimerPopover(QWidget):
             }}
             QSlider::groove:horizontal {{
                 height: 4px;
-                background: {PALETTE['border']};
+                background: #30394e;
                 border-radius: 2px;
             }}
             QSlider::handle:horizontal {{
-                background: {PALETTE['accent']};
+                background: {PALETTE['accent2']};
                 border: none;
                 width: 14px;
                 height: 14px;
@@ -1478,7 +1518,7 @@ class TimerPopover(QWidget):
                 border-radius: 7px;
             }}
             QSlider::sub-page:horizontal {{
-                background: {PALETTE['accent']};
+                background: {PALETTE['accent2']};
                 border-radius: 2px;
             }}
         """)
@@ -1566,7 +1606,7 @@ class ProxyApp(QMainWindow):
 
         self._cliproxy_tab = QWidget()
         self._cliproxy_tab.setObjectName("cliproxyTab")
-        self._tabs.addTab(self._cliproxy_tab, "CliProxy")
+        self._tabs.addTab(self._cliproxy_tab, make_tab_icon("cliproxy"), "CliProxy")
 
         cliproxy_layout = QVBoxLayout(self._cliproxy_tab)
         cliproxy_layout.setContentsMargins(0, 10, 0, 0)
@@ -1759,12 +1799,7 @@ class ProxyApp(QMainWindow):
         self._proxy_search.setPlaceholderText("🔍 Search proxies...")
         self._proxy_search.setFixedHeight(26)
         self._proxy_search.setMaximumWidth(200)
-        self._proxy_search.setStyleSheet(
-            f"QLineEdit {{ background: {PALETTE['entry_bg']}; color: {PALETTE['text']}; "
-            f"border: 1px solid {PALETTE['border']}; border-radius: 4px; "
-            f"padding: 0 8px; font-size: 8pt; }}"
-            f"QLineEdit:focus {{ border-color: {PALETTE['border_focus']}; }}"
-        )
+        self._proxy_search.setStyleSheet(toolbar_search_style())
         self._proxy_search.textChanged.connect(self._apply_proxy_filter)
 
         self._sort_btn = QPushButton("📐 Sort")
@@ -1772,13 +1807,7 @@ class ProxyApp(QMainWindow):
         self._sort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._sort_btn.setFixedHeight(26)
         self._sort_btn.setFixedWidth(68)
-        self._sort_btn.setStyleSheet(
-            f"QPushButton {{ background: {PALETTE['entry_bg']}; color: {PALETTE['label']}; "
-            f"border: 1px solid {PALETTE['border']}; border-radius: 4px; "
-            f"padding: 0 8px; font-size: 8pt; }}"
-            f"QPushButton:hover {{ background: {PALETTE['panel']}; border-color: {PALETTE['border_focus']}; color: {PALETTE['text']}; }}"
-            f"QPushButton:pressed {{ background: {PALETTE['accent']}; color: #fff; }}"
-        )
+        self._sort_btn.setStyleSheet(toolbar_button_style())
         self._sort_btn.clicked.connect(self._show_sort_popover)
         self._current_sort = None   # None | 'country' | 'port' | 'ping'
 
@@ -1787,13 +1816,7 @@ class ProxyApp(QMainWindow):
         self._export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._export_btn.setFixedHeight(26)
         self._export_btn.setFixedWidth(74)
-        self._export_btn.setStyleSheet(
-            f"QPushButton {{ background: {PALETTE['entry_bg']}; color: {PALETTE['label']}; "
-            f"border: 1px solid {PALETTE['border']}; border-radius: 4px; "
-            f"padding: 0 8px; font-size: 8pt; }}"
-            f"QPushButton:hover {{ background: {PALETTE['panel']}; border-color: {PALETTE['border_focus']}; color: {PALETTE['text']}; }}"
-            f"QPushButton:pressed {{ background: {PALETTE['accent']}; color: #fff; }}"
-        )
+        self._export_btn.setStyleSheet(toolbar_button_style())
         self._export_btn.clicked.connect(self._show_export_popover)
         self._export_popover = self._make_export_popover()
 
@@ -1802,13 +1825,7 @@ class ProxyApp(QMainWindow):
         self._stats_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._stats_btn.setFixedHeight(26)
         self._stats_btn.setFixedWidth(74)
-        self._stats_btn.setStyleSheet(
-            f"QPushButton {{ background: {PALETTE['entry_bg']}; color: {PALETTE['accent2']}; "
-            f"border: 1px solid {PALETTE['border']}; border-radius: 4px; "
-            f"padding: 0 8px; font-size: 8pt; }}"
-            f"QPushButton:hover {{ background: {PALETTE['panel']}; border-color: {PALETTE['accent2']}; color: #fff; }}"
-            f"QPushButton:pressed {{ background: {PALETTE['accent']}; color: #fff; }}"
-        )
+        self._stats_btn.setStyleSheet(toolbar_button_style(accent=True))
         self._stats_btn.clicked.connect(self._show_stats_modal)
         self._stats_modal: StatsModal | None = None
 
@@ -1858,7 +1875,9 @@ class ProxyApp(QMainWindow):
 
         # Blur overlay stays inside the CliProxy tab so the Ping tab remains usable.
         self._ping_tab = PingTab()
-        self._tabs.addTab(self._ping_tab, "Ping")
+        self._tabs.addTab(self._ping_tab, make_tab_icon("ping"), "Ping")
+        self._check_port_tab = CheckPortTab()
+        self._tabs.addTab(self._check_port_tab, make_tab_icon("check_port"), "Check port")
 
         self._blur_overlay = BlurOverlay(self._cliproxy_tab)
         self._cliproxy_btn = self._blur_overlay.btn
@@ -1902,7 +1921,7 @@ class ProxyApp(QMainWindow):
                 f"QPushButton {{ background: transparent; color: {PALETTE['text']}; "
                 f"border: none; border-radius: 6px; padding: 0 10px; "
                 f"font-size: 9pt; text-align: left; }}"
-                f"QPushButton:hover {{ background: {PALETTE['accent']}; color: #fff; }}"
+                f"QPushButton:hover {{ background: {PALETTE['panel']}; color: #fff; }}"
                 f"QPushButton:checked {{ background: {PALETTE['accent']}; color: #fff; }}"
             )
             btn.clicked.connect(lambda checked, k=key: self._apply_sort(k))
@@ -1930,7 +1949,7 @@ class ProxyApp(QMainWindow):
 
         pop.setStyleSheet(
             f"QWidget#sortPopover {{ background: {PALETTE['card']}; "
-            f"border: 1.5px solid {PALETTE['border']}; border-radius: 10px; }}"
+            f"border: 1px solid {PALETTE['border']}; border-radius: 8px; }}"
         )
         return pop
 
@@ -1949,12 +1968,7 @@ class ProxyApp(QMainWindow):
         # Update sort button label to show active sort
         labels = {"country": "🌍 Sort", "port": "🔢 Sort", "ping": "⚡ Sort"}
         self._sort_btn.setText(labels.get(key, "⇅ Sort"))
-        self._sort_btn.setStyleSheet(
-            f"QPushButton {{ background: {PALETTE['accent']}; color: #fff; "
-            f"border: 1px solid {PALETTE['accent']}; border-radius: 4px; "
-            f"padding: 0 8px; font-size: 8pt; }}"
-            f"QPushButton:hover {{ background: {PALETTE['btn_hv']}; }}"
-        )
+        self._sort_btn.setStyleSheet(toolbar_button_style(active=True))
         self._rebuild_sorted_cards()
 
     def _clear_sort(self):
@@ -1963,13 +1977,7 @@ class ProxyApp(QMainWindow):
         for b in self._sort_action_btns.values():
             b.setChecked(False)
         self._sort_btn.setText("📐 Sort")
-        self._sort_btn.setStyleSheet(
-            f"QPushButton {{ background: {PALETTE['entry_bg']}; color: {PALETTE['label']}; "
-            f"border: 1px solid {PALETTE['border']}; border-radius: 4px; "
-            f"padding: 0 8px; font-size: 8pt; }}"
-            f"QPushButton:hover {{ background: {PALETTE['panel']}; border-color: {PALETTE['border_focus']}; color: {PALETTE['text']}; }}"
-            f"QPushButton:pressed {{ background: {PALETTE['accent']}; color: #fff; }}"
-        )
+        self._sort_btn.setStyleSheet(toolbar_button_style())
         self._rebuild_sorted_cards()
 
     # ── Export popover ───────────────────────────────────────────────────────
@@ -1995,14 +2003,14 @@ class ProxyApp(QMainWindow):
                 f"QPushButton {{ background: transparent; color: {PALETTE['text']}; "
                 f"border: none; border-radius: 6px; padding: 0 10px; "
                 f"font-size: 9pt; text-align: left; }}"
-                f"QPushButton:hover {{ background: {PALETTE['accent']}; color: #fff; }}"
+                f"QPushButton:hover {{ background: {PALETTE['panel']}; color: #fff; }}"
             )
             btn.clicked.connect(lambda checked, f=fmt: self._export_proxies(f))
             layout.addWidget(btn)
 
         pop.setStyleSheet(
             f"QWidget#sortPopover {{ background: {PALETTE['card']}; "
-            f"border: 1.5px solid {PALETTE['border']}; border-radius: 10px; }}"
+            f"border: 1px solid {PALETTE['border']}; border-radius: 8px; }}"
         )
         return pop
 

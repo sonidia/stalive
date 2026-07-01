@@ -1,19 +1,19 @@
 PALETTE = {
-    "bg":           "#0f1117",
-    "panel":        "#1a1d2e",
-    "card":         "#1e2235",
-    "accent":       "#6c63ff",
-    "accent2":      "#a78bfa",
-    "success":      "#22c55e",
-    "warning":      "#f59e0b",
-    "error":        "#f87171",
-    "text":         "#e2e8f0",
-    "subtext":      "#64748b",
-    "border":       "#2d3150",
-    "border_focus": "#6c63ff",
-    "entry_bg":     "#151728",
-    "btn_hv":       "#7c73ff",
-    "label":        "#94a3b8",
+    "bg":           "#0b0f14",
+    "panel":        "#111827",
+    "card":         "#161c2a",
+    "accent":       "#7c6cff",
+    "accent2":      "#38bdf8",
+    "success":      "#34d399",
+    "warning":      "#fbbf24",
+    "error":        "#fb7185",
+    "text":         "#e7edf7",
+    "subtext":      "#7d8aa1",
+    "border":       "#273044",
+    "border_focus": "#7c6cff",
+    "entry_bg":     "#0f1420",
+    "btn_hv":       "#8a7dff",
+    "label":        "#a7b0c3",
 }
 
 STYLESHEET = f"""
@@ -23,7 +23,7 @@ QMainWindow, QWidget#central {{
 QWidget#card {{
     background: {PALETTE['card']};
     border: 1px solid {PALETTE['border']};
-    border-radius: 12px;
+    border-radius: 8px;
 }}
 QLabel#section {{
     color: {PALETTE['accent2']};
@@ -45,26 +45,46 @@ QLabel {{
 QLineEdit {{
     background: {PALETTE['entry_bg']};
     color: {PALETTE['text']};
-    border: 1.5px solid {PALETTE['border']};
-    border-radius: 8px;
-    padding: 7px 11px;
+    border: 1px solid {PALETTE['border']};
+    border-radius: 7px;
+    padding: 8px 12px;
     font-size: 10pt;
     selection-background-color: {PALETTE['accent']};
 }}
 QLineEdit:focus {{
     border-color: {PALETTE['border_focus']};
+    background: #121827;
+}}
+QPlainTextEdit {{
+    background: {PALETTE['entry_bg']};
+    color: {PALETTE['text']};
+    border: 1px solid {PALETTE['border']};
+    border-radius: 7px;
+    padding: 7px 9px;
+    font-size: 8.5pt;
+    selection-background-color: {PALETTE['accent']};
+}}
+QPlainTextEdit:focus {{
+    border-color: {PALETTE['border_focus']};
+    background: #121827;
+}}
+QPlainTextEdit#toolOutput {{
+    color: {PALETTE['label']};
+    font-family: "Consolas", monospace;
+    font-size: 8pt;
 }}
 QComboBox {{
     background: {PALETTE['entry_bg']};
     color: {PALETTE['text']};
-    border: 1.5px solid {PALETTE['border']};
-    border-radius: 8px;
-    padding: 7px 11px;
+    border: 1px solid {PALETTE['border']};
+    border-radius: 7px;
+    padding: 8px 12px;
     font-size: 10pt;
     selection-background-color: {PALETTE['accent']};
 }}
 QComboBox:focus {{
     border-color: {PALETTE['border_focus']};
+    background: #121827;
 }}
 QComboBox::drop-down {{
     subcontrol-origin: padding;
@@ -83,8 +103,8 @@ QComboBox::down-arrow {{
 QComboBox QAbstractItemView {{
     background: {PALETTE['panel']};
     color: {PALETTE['text']};
-    border: 1.5px solid {PALETTE['border_focus']};
-    border-radius: 8px;
+    border: 1px solid {PALETTE['border_focus']};
+    border-radius: 7px;
     selection-background-color: {PALETTE['accent']};
     selection-color: #fff;
     padding: 4px;
@@ -107,18 +127,16 @@ QToolTip {{
 QTabWidget#mainTabs::pane {{
     background: transparent;
     border: none;
-    top: -1px;
+    top: 0;
 }}
 QTabWidget#mainTabs QTabBar::tab {{
-    background: {PALETTE['card']};
+    background: {PALETTE['entry_bg']};
     color: {PALETTE['label']};
     border: 1px solid {PALETTE['border']};
-    border-bottom: none;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-    min-width: 104px;
-    padding: 8px 18px;
-    margin-right: 6px;
+    border-radius: 7px;
+    min-width: 84px;
+    padding: 6px 14px;
+    margin-right: 5px;
     font-size: 9pt;
     font-weight: 700;
 }}
@@ -128,9 +146,44 @@ QTabWidget#mainTabs QTabBar::tab:selected {{
     border-color: {PALETTE['accent']};
 }}
 QTabWidget#mainTabs QTabBar::tab:hover:!selected {{
-    background: {PALETTE['panel']};
+    background: {PALETTE['card']};
     color: {PALETTE['text']};
-    border-color: {PALETTE['border_focus']};
+    border-color: {PALETTE['accent2']};
+}}
+QWidget#toolPanel,
+QWidget#pingPanel {{
+    background: {PALETTE['card']};
+    border: 1px solid {PALETTE['border']};
+    border-radius: 8px;
+}}
+QWidget#toolPage {{
+    background: {PALETTE['card']};
+}}
+QLabel#toolTitle,
+QLabel#pingTitle {{
+    color: {PALETTE['text']};
+    font-size: 12pt;
+    font-weight: 700;
+    background: transparent;
+}}
+QLabel#toolSection,
+QLabel#pingSection {{
+    color: {PALETTE['accent2']};
+    font-size: 9pt;
+    font-weight: 700;
+    background: transparent;
+}}
+QLabel#toolHint,
+QLabel#pingHint {{
+    color: {PALETTE['subtext']};
+    font-size: 8pt;
+    background: transparent;
+}}
+QLabel#toolFormatHint,
+QLabel#pingFormatHint {{
+    color: {PALETTE['label']};
+    font-size: 7.5pt;
+    background: transparent;
 }}
 QPushButton#fetchBtn {{
     background: {PALETTE['accent']};
@@ -138,8 +191,8 @@ QPushButton#fetchBtn {{
     border: none;
     border-top-left-radius: 0px;
     border-bottom-left-radius: 0px;
-    border-top-right-radius: 8px;
-    border-bottom-right-radius: 8px;
+    border-top-right-radius: 7px;
+    border-bottom-right-radius: 7px;
     padding: 10px 26px;
     font-size: 10pt;
     font-weight: 700;
@@ -148,10 +201,11 @@ QPushButton#fetchBtn:hover   {{ background: {PALETTE['btn_hv']}; }}
 QPushButton#fetchBtn:pressed  {{ background: #5a52e0; }}
 QPushButton#fetchBtn:disabled {{ background: {PALETTE['border']}; color: {PALETTE['subtext']}; }}
 QPushButton#geoCheckBtn {{
+    background: {PALETTE['entry_bg']};
     color: #38bdf8;
-    border: 1.5px solid {PALETTE['border']};
-    border-top-left-radius: 8px;
-    border-bottom-left-radius: 8px;
+    border: 1px solid {PALETTE['border']};
+    border-top-left-radius: 7px;
+    border-bottom-left-radius: 7px;
     border-top-right-radius: 0px;
     border-bottom-right-radius: 0px;
     padding: 0 10px;
@@ -162,15 +216,15 @@ QPushButton#geoCheckBtn:hover   {{ background: #0f3460; color: #fff; }}
 QPushButton#geoCheckBtn:pressed  {{ background: #0f3460; color: #fff; }}
 QPushButton#geoCheckBtn:disabled {{ background: {PALETTE['card']}; color: {PALETTE['subtext']}; border-color: {PALETTE['border']}; }}
 QPushButton#clearBtn {{
-    background: {PALETTE['card']};
+    background: {PALETTE['entry_bg']};
     color: {PALETTE['label']};
-    border: 1.5px solid {PALETTE['border']};
-    border-radius: 8px;
+    border: 1px solid {PALETTE['border']};
+    border-radius: 7px;
     padding: 0 10px;
     font-size: 10pt;
     font-weight: 700;
 }}
-QPushButton#clearBtn:hover  {{ background: {PALETTE['border']}; color: {PALETTE['text']}; }}
+QPushButton#clearBtn:hover  {{ background: {PALETTE['card']}; border-color: {PALETTE['accent2']}; color: {PALETTE['text']}; }}
 QPushButton#clearBtn:pressed {{ background: #252840; }}
 QPushButton#cliproxyBtn {{
     background: {PALETTE['card']};
@@ -187,18 +241,18 @@ QPushButton#cliproxyBtn[running="true"] {{
 }}
 QPushButton#cliproxyBtn:hover {{ background: {PALETTE['border']}; }}
 QPushButton#autoCheckBtn {{
-    background: {PALETTE['card']};
+    background: {PALETTE['entry_bg']};
     color: {PALETTE['label']};
-    border: 1.5px solid {PALETTE['border']};
+    border: 1px solid {PALETTE['border']};
     border-right: none;
-    border-radius: 8px;
+    border-radius: 7px;
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
     padding: 10px 18px;
     font-size: 10pt;
     font-weight: 700;
 }}
-QPushButton#autoCheckBtn:hover  {{ background: {PALETTE['border']}; color: {PALETTE['text']}; }}
+QPushButton#autoCheckBtn:hover  {{ background: {PALETTE['card']}; color: {PALETTE['text']}; }}
 QPushButton#autoCheckBtn:pressed {{ background: #252840; }}
 QPushButton#autoCheckBtn:checked {{
     background: {PALETTE['accent']};
@@ -213,55 +267,55 @@ QPushButton#autoCheckBtn:disabled {{
     opacity: 0.5;
 }}
 QPushButton#timerIntervalBtn {{
-    background: {PALETTE['card']};
+    background: {PALETTE['entry_bg']};
     color: {PALETTE['label']};
-    border: 1.5px solid {PALETTE['border']};
-    border-radius: 8px;
+    border: 1px solid {PALETTE['border']};
+    border-radius: 7px;
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
     padding: 0;
     font-size: 13pt;
 }}
-QPushButton#timerIntervalBtn:hover {{ background: {PALETTE['border']}; color: {PALETTE['text']}; }}
+QPushButton#timerIntervalBtn:hover {{ background: {PALETTE['card']}; color: {PALETTE['text']}; }}
 QPushButton#timerIntervalBtn:pressed {{ background: #252840; }}
 QPushButton#timerIntervalBtn:disabled {{ background: {PALETTE['card']}; color: {PALETTE['subtext']}; border-color: {PALETTE['border']}; }}
 QPushButton#bulkCheckBtn {{
-    background: {PALETTE['card']};
+    background: {PALETTE['entry_bg']};
     color: {PALETTE['label']};
-    border: 1.5px solid {PALETTE['border']};
+    border: 1px solid {PALETTE['border']};
     border-right: none;
-    border-radius: 8px;
+    border-radius: 7px;
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
     padding: 0px 10px;
     font-size: 10pt;
     font-weight: 700;
 }}
-QPushButton#bulkCheckBtn:hover  {{ background: {PALETTE['border']}; color: {PALETTE['text']}; }}
+QPushButton#bulkCheckBtn:hover  {{ background: {PALETTE['card']}; color: {PALETTE['text']}; }}
 QPushButton#bulkCheckBtn:pressed {{ background: #252840; }}
 QPushButton#bulkCheckBtn:disabled {{ background: {PALETTE['card']}; color: {PALETTE['subtext']}; border-color: {PALETTE['border']}; }}
 QPushButton#bulkRefreshBtn {{
-    background: {PALETTE['card']};
+    background: {PALETTE['entry_bg']};
     color: {PALETTE['label']};
-    border: 1.5px solid {PALETTE['border']};
-    border-radius: 8px;
+    border: 1px solid {PALETTE['border']};
+    border-radius: 7px;
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
     padding: 0px 10px;
     font-size: 10pt;
     font-weight: 700;
 }}
-QPushButton#bulkRefreshBtn:hover  {{ background: {PALETTE['border']}; color: {PALETTE['text']}; }}
+QPushButton#bulkRefreshBtn:hover  {{ background: {PALETTE['card']}; color: {PALETTE['text']}; }}
 QPushButton#bulkRefreshBtn:pressed {{ background: #252840; }}
 QPushButton#bulkRefreshBtn:disabled {{ background: {PALETTE['card']}; color: {PALETTE['subtext']}; border-color: {PALETTE['border']}; }}
 /* ── Proxy card ── */
 QWidget#proxyCard {{
     background: {PALETTE['card']};
-    border: 1.5px solid #3d4270;
-    border-radius: 10px;
+    border: 1px solid #2b354a;
+    border-radius: 8px;
 }}
 QWidget#proxyCard:hover {{
-    border-color: {PALETTE['accent']};
+    border-color: {PALETTE['accent2']};
 }}
 QLabel#proxyIp {{
     color: {PALETTE['text']};
@@ -337,7 +391,7 @@ QLabel#respIpLabel {{
 QPushButton#cardRefreshBtn {{
     background: transparent;
     color: {PALETTE['accent']};
-    border: 1.5px solid {PALETTE['border']};
+    border: 1px solid {PALETTE['border']};
     border-radius: 6px;
     padding: 3px 6px;
     font-size: 8pt;
@@ -350,7 +404,7 @@ QPushButton#cardRefreshBtn:disabled {{ color: {PALETTE['subtext']}; border-color
 QPushButton#cardCheckBtn {{
     background: transparent;
     color: {PALETTE['accent2']};
-    border: 1.5px solid {PALETTE['border']};
+    border: 1px solid {PALETTE['border']};
     border-radius: 6px;
     padding: 3px 6px;
     font-size: 8pt;
@@ -363,7 +417,7 @@ QPushButton#cardCheckBtn:disabled {{ color: {PALETTE['subtext']}; border-color: 
 QPushButton#cardDeleteBtn {{
     background: transparent;
     color: {PALETTE['error']};
-    border: 1.5px solid {PALETTE['border']};
+    border: 1px solid {PALETTE['border']};
     border-radius: 6px;
     padding: 3px 6px;
     font-size: 8pt;
@@ -388,26 +442,26 @@ QPushButton#cardCopyBtn:pressed  {{ color: #fff; background: {PALETTE['accent']}
 QScrollArea#resultScroll {{
     background: {PALETTE['entry_bg']};
     border: 1px solid {PALETTE['border']};
-    border-radius: 10px;
+    border-radius: 8px;
 }}
 QScrollArea#resultScroll > QWidget > QWidget {{
     background: {PALETTE['entry_bg']};
-    border-radius: 10px;
+    border-radius: 8px;
 }}
 QScrollBar:vertical {{
-    background: #101322;
+    background: {PALETTE['entry_bg']};
     width: 8px;
     border-radius: 4px;
     margin: 0;
 }}
 QScrollBar::handle:vertical {{
-    background: {PALETTE['border']};
+    background: #313b52;
     border-radius: 4px;
     min-height: 30px;
 }}
-QScrollBar::handle:vertical:hover {{ background: {PALETTE['accent']}; }}
+QScrollBar::handle:vertical:hover {{ background: {PALETTE['accent2']}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: #101322; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: {PALETTE['entry_bg']}; }}
 QFrame#divider {{
     background: {PALETTE['border']};
     border: none;
@@ -432,7 +486,7 @@ QMessageBox QLabel {{
 QMessageBox QPushButton {{
     background: {PALETTE['card']};
     color: {PALETTE['text']};
-    border: 1.5px solid {PALETTE['border']};
+    border: 1px solid {PALETTE['border']};
     border-radius: 6px;
     padding: 5px 18px;
     font-size: 9pt;
@@ -449,6 +503,38 @@ QMessageBox QPushButton:pressed {{
     color: #fff;
 }}
 """
+
+
+def toolbar_search_style() -> str:
+    return (
+        f"QLineEdit {{ background: {PALETTE['entry_bg']}; color: {PALETTE['text']}; "
+        f"border: 1px solid {PALETTE['border']}; border-radius: 7px; "
+        f"padding: 0 10px; font-size: 8pt; }}"
+        f"QLineEdit:focus {{ border-color: {PALETTE['border_focus']}; background: #121827; }}"
+    )
+
+
+def toolbar_button_style(accent: bool = False, active: bool = False) -> str:
+    if active:
+        bg = PALETTE["accent"]
+        color = "#fff"
+        border = PALETTE["accent"]
+        hover = PALETTE["btn_hv"]
+        hover_border = PALETTE["btn_hv"]
+    else:
+        bg = PALETTE["entry_bg"]
+        color = PALETTE["accent2"] if accent else PALETTE["label"]
+        border = PALETTE["border"]
+        hover = PALETTE["card"]
+        hover_border = PALETTE["accent2"] if accent else PALETTE["border_focus"]
+
+    return (
+        f"QPushButton {{ background: {bg}; color: {color}; "
+        f"border: 1px solid {border}; border-radius: 7px; "
+        f"padding: 0 9px; font-size: 8pt; font-weight: 700; }}"
+        f"QPushButton:hover {{ background: {hover}; border-color: {hover_border}; color: #fff; }}"
+        f"QPushButton:pressed {{ background: {PALETTE['accent']}; color: #fff; }}"
+    )
 
 COUNTRY_DATA = {
     "US": {

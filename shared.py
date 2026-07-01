@@ -1,3 +1,7 @@
+from PySide6.QtCore import Property, QEasingCurve, QPropertyAnimation, QRect
+from PySide6.QtGui import QColor, QPainter
+from PySide6.QtWidgets import QTabBar, QTabWidget
+
 PALETTE = {
     "bg":           "#0b0f14",
     "panel":        "#111827",
@@ -15,6 +19,67 @@ PALETTE = {
     "btn_hv":       "#8a7dff",
     "label":        "#a7b0c3",
 }
+
+class SlidingTabBar(QTabBar):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._indicator_rect = QRect()
+        self._indicator_anim = QPropertyAnimation(self, b"indicatorRect", self)
+        self._indicator_anim.setDuration(180)
+        self._indicator_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.currentChanged.connect(self._animate_indicator)
+
+    def get_indicator_rect(self) -> QRect:
+        return self._indicator_rect
+
+    def set_indicator_rect(self, rect: QRect):
+        self._indicator_rect = rect
+        self.update()
+
+    indicatorRect = Property(QRect, get_indicator_rect, set_indicator_rect)
+
+    def _target_rect(self, index: int) -> QRect:
+        if index < 0 or index >= self.count():
+            return QRect()
+        return self.tabRect(index).adjusted(3, 3, -3, -3)
+
+    def _animate_indicator(self, index: int):
+        target = self._target_rect(index)
+        if not target.isValid():
+            return
+        if self._indicator_rect.isNull():
+            self._indicator_rect = target
+            self.update()
+            return
+        self._indicator_anim.stop()
+        self._indicator_anim.setStartValue(self._indicator_rect)
+        self._indicator_anim.setEndValue(target)
+        self._indicator_anim.start()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        target = self._target_rect(self.currentIndex())
+        if target.isValid():
+            self._indicator_rect = target
+
+    def tabInserted(self, index: int):
+        super().tabInserted(index)
+        self._animate_indicator(self.currentIndex())
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if self._indicator_rect.isValid():
+            painter.setPen(QColor(PALETTE["accent"]))
+            painter.setBrush(QColor(PALETTE["accent"]))
+            painter.drawRoundedRect(self._indicator_rect, 7, 7)
+        painter.end()
+        super().paintEvent(event)
+
+class SlidingTabWidget(QTabWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setTabBar(SlidingTabBar(self))
 
 STYLESHEET = f"""
 QMainWindow, QWidget#central {{
@@ -130,26 +195,32 @@ QTabWidget#mainTabs::pane {{
     border: none;
     top: 0;
 }}
-QTabWidget#mainTabs QTabBar::tab {{
+QTabWidget#mainTabs QTabBar {{
     background: {PALETTE['entry_bg']};
-    color: {PALETTE['label']};
     border: 1px solid {PALETTE['border']};
+    border-radius: 10px;
+    padding: 3px;
+}}
+QTabWidget#mainTabs QTabBar::tab {{
+    background: transparent;
+    color: {PALETTE['label']};
+    border: 1px solid transparent;
     border-radius: 7px;
     min-width: 84px;
-    padding: 6px 14px;
-    margin-right: 5px;
+    padding: 7px 16px;
+    margin: 0;
     font-size: 9pt;
     font-weight: 700;
 }}
 QTabWidget#mainTabs QTabBar::tab:selected {{
-    background: {PALETTE['accent']};
+    background: transparent;
     color: #fff;
-    border-color: {PALETTE['accent']};
+    border-color: transparent;
 }}
 QTabWidget#mainTabs QTabBar::tab:hover:!selected {{
-    background: {PALETTE['card']};
+    background: rgba(255, 255, 255, 0.04);
     color: {PALETTE['text']};
-    border-color: {PALETTE['accent2']};
+    border-color: transparent;
 }}
 QWidget#toolPanel,
 QWidget#pingPanel {{

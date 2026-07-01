@@ -2,19 +2,20 @@ import sys, json, requests, time, os, csv, socket, uuid, threading
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
 from stats import stats_collector, StatsModal
-from ping import CheckPortTab, PingTab
+from tabs import HostTab, ProxyTab
 from PySide6.QtGui     import QColor, QFont, QIcon, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout, QPainterPath, QBrush, QPixmap, QPolygon, QPen
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QLineEdit, QComboBox, QPushButton,
     QTextEdit, QFrame, QSizePolicy, QCompleter, QMessageBox,
     QScrollArea, QStyledItemDelegate, QStyleOptionViewItem, QStyle, QGraphicsBlurEffect,
-    QSlider, QFileDialog, QTabWidget
+    QSlider, QFileDialog
 )
 
 from shared import (
     COUNTRY_DATA,
     PALETTE,
+    SlidingTabWidget,
     STYLESHEET,
     toolbar_button_style,
     toolbar_search_style,
@@ -1600,7 +1601,7 @@ class ProxyApp(QMainWindow):
         self._cliproxy_timer.timeout.connect(self._check_cliproxy_silent)
         self._cliproxy_timer.start()
 
-        self._tabs = QTabWidget()
+        self._tabs = SlidingTabWidget()
         self._tabs.setObjectName("mainTabs")
         main.addWidget(self._tabs, 1)
 
@@ -1874,9 +1875,9 @@ class ProxyApp(QMainWindow):
         cliproxy_layout.addLayout(footer)
 
         # Blur overlay stays inside the CliProxy tab so the Ping tab remains usable.
-        self._ping_tab = PingTab()
+        self._ping_tab = ProxyTab()
         self._tabs.addTab(self._ping_tab, make_tab_icon("ping"), "Proxy")
-        self._check_port_tab = CheckPortTab()
+        self._check_port_tab = HostTab()
         self._tabs.addTab(self._check_port_tab, make_tab_icon("check_port"), "Host")
 
         self._blur_overlay = BlurOverlay(self._cliproxy_tab)

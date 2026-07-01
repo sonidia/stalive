@@ -50,18 +50,47 @@ _PROTO_MAP = {
     "socks4":  "socks4",
     "socks4a": "socks4",
     "socks5":  "socks5",
-    "socks5h": "socks5",
+    "socks5h": "socks5h",
 }
 
-PROXY_PING_TIMEOUT = 10.0
-PROXY_TEST_URL = "http://httpbin.org/ip"
+PROXY_PING_TIMEOUT = 15.0
 PROXY_GEO_URL = (
     "http://ip-api.com/json/{ip}"
     "?fields=status,message,country,countryCode,regionName,city,isp,org,as,timezone,query"
 )
+PROXY_SELF_GEO_URL = (
+    "http://ip-api.com/json/"
+    "?fields=status,message,country,countryCode,regionName,city,isp,org,as,timezone,query"
+)
+PROXY_TEST_ENDPOINTS = (
+    ("ip-api", PROXY_SELF_GEO_URL, "ip-api", (5.0, 15.0)),
+    ("ipify", "http://api.ipify.org?format=json", "ipify", (5.0, 10.0)),
+    ("icanhazip", "http://icanhazip.com", "plain", (5.0, 10.0)),
+)
+PROXY_REQUEST_HEADERS = {
+    "User-Agent": "stalive-proxy-check/1.0",
+    "Cache-Control": "no-cache",
+}
+COMPACT_CONTROL_HEIGHT = 32
 
 def parse_proxy(raw: str, default_protocol: str = "http") -> ParsedProxy | None:
     raw = raw.strip()
+
+    if "://" not in raw and raw.count(":") >= 3:
+        host, port_str, username, password = raw.split(":", 3)
+        host = host.strip()
+        username = username.strip()
+        password = password.strip()
+        try:
+            port = int(port_str.strip())
+            if not (1 <= port <= 65535):
+                return None
+        except ValueError:
+            return None
+        if not host or not username:
+            return None
+        return ParsedProxy(default_protocol.lower(), host, port, username, password)
+
     m = _PROXY_RE.match(raw)
     if not m:
         return None
@@ -111,15 +140,41 @@ class LinkedPlainTextEdit(QPlainTextEdit):
         super().__init__(parent)
         self.setMouseTracking(True)
         self._highlight_line = -1
+        self._suppress_hover_until_leave = False
 
     def mouseMoveEvent(self, event):
+        if event.buttons() or self._suppress_hover_until_leave:
+            self.set_highlight_line(-1)
+            super().mouseMoveEvent(event)
+            return
         cursor = self.cursorForPosition(event.position().toPoint())
         line = cursor.blockNumber()
         if line != self._highlight_line:
             self.line_hovered.emit(line)
         super().mouseMoveEvent(event)
 
+    def mousePressEvent(self, event):
+        self._suppress_hover_until_leave = True
+        self.line_hovered.emit(-1)
+        super().mousePressEvent(event)
+
+    def focusInEvent(self, event):
+        self._suppress_hover_until_leave = True
+        self.line_hovered.emit(-1)
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        self._suppress_hover_until_leave = False
+        self.line_hovered.emit(-1)
+        super().focusOutEvent(event)
+
+    def keyPressEvent(self, event):
+        self._suppress_hover_until_leave = True
+        self.line_hovered.emit(-1)
+        super().keyPressEvent(event)
+
     def leaveEvent(self, event):
+        self._suppress_hover_until_leave = False
         self.line_hovered.emit(-1)
         super().leaveEvent(event)
 
@@ -173,20 +228,40 @@ def _check_tcp(host: str, port: int, timeout: float) -> tuple[bool, float, str, 
     except Exception as exc:
         return False, (time.monotonic() - t0) * 1000, str(exc), ""
 
-def _proxy_url(proxy: ParsedProxy) -> str:
+def _proxy_url(proxy: ParsedProxy, protocol: str | None = None) -> str:
     auth = ""
     if proxy.username:
         auth = f"{proxy.username}:{proxy.password}@"
-    return f"{proxy.protocol}://{auth}{proxy.host}:{proxy.port}"
+    return f"{protocol or proxy.protocol}://{auth}{proxy.host}:{proxy.port}"
 
-def _origin_ip_from_response(resp: requests.Response) -> str:
+def _proxy_probe_protocols(proxy: ParsedProxy) -> list[str]:
+    if proxy.protocol == "socks5":
+        return ["socks5h", "socks5"]
+    return [proxy.protocol]
+
+def _extract_probe_payload(resp: requests.Response, kind: str) -> tuple[str, dict, str]:
     try:
-        origin = str(resp.json().get("origin", "")).strip()
-    except Exception:
-        return ""
-    if "," in origin:
-        origin = origin.split(",", 1)[0].strip()
-    return origin
+        if kind == "ip-api":
+            data = resp.json()
+            if data.get("status") != "success":
+                return "", {}, str(data.get("message", "Geo endpoint failed"))
+            return str(data.get("query", "")).strip(), data, ""
+        if kind == "ipify":
+            data = resp.json()
+            return str(data.get("ip", "")).strip(), {}, ""
+        if kind == "plain":
+            match = re.search(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", resp.text or "")
+            return (match.group(0), {}, "") if match else ("", {}, "No response IP")
+    except Exception as exc:
+        return "", {}, str(exc)
+
+    return "", {}, "Unsupported response format"
+
+def _short_error(exc: Exception | str) -> str:
+    text = str(exc).strip().replace("\n", " ")
+    if len(text) > 180:
+        return text[:177].rstrip() + "..."
+    return text
 
 def _lookup_ip_geo(ip: str) -> dict:
     if not ip:
@@ -203,52 +278,61 @@ def _lookup_ip_geo(ip: str) -> dict:
         return {"geo_error": str(exc)}
 
 def _probe_proxy(proxy: ParsedProxy) -> dict:
-    url = _proxy_url(proxy)
-    proxies = {"http": url, "https": url}
     t0 = time.monotonic()
-    try:
-        resp = requests.get(PROXY_TEST_URL, proxies=proxies, timeout=PROXY_PING_TIMEOUT)
-        elapsed = (time.monotonic() - t0) * 1000
-    except Exception as exc:
-        return {
-            "label": proxy.display,
-            "alive": False,
-            "elapsed_ms": (time.monotonic() - t0) * 1000,
-            "error": str(exc),
-        }
+    errors = []
 
-    if resp.status_code != 200:
-        return {
-            "label": proxy.display,
-            "alive": False,
-            "elapsed_ms": elapsed,
-            "error": f"HTTP {resp.status_code}",
-        }
+    for probe_protocol in _proxy_probe_protocols(proxy):
+        url = _proxy_url(proxy, probe_protocol)
+        proxies = {"http": url, "https": url}
+        for endpoint_name, endpoint_url, endpoint_kind, timeout in PROXY_TEST_ENDPOINTS:
+            try:
+                resp = requests.get(
+                    endpoint_url,
+                    proxies=proxies,
+                    timeout=timeout,
+                    headers=PROXY_REQUEST_HEADERS,
+                )
+            except Exception as exc:
+                errors.append(f"{endpoint_name}/{probe_protocol}: {_short_error(exc)}")
+                continue
 
-    response_ip = _origin_ip_from_response(resp)
-    if not response_ip:
-        return {
-            "label": proxy.display,
-            "alive": False,
-            "elapsed_ms": elapsed,
-            "error": "No response IP",
-        }
+            if resp.status_code != 200:
+                errors.append(f"{endpoint_name}/{probe_protocol}: HTTP {resp.status_code}")
+                continue
 
-    geo = _lookup_ip_geo(response_ip)
+            response_ip, geo, parse_error = _extract_probe_payload(resp, endpoint_kind)
+            if not response_ip:
+                errors.append(
+                    f"{endpoint_name}/{probe_protocol}: {parse_error or 'No response IP'}"
+                )
+                continue
+
+            if not geo:
+                geo = _lookup_ip_geo(response_ip)
+
+            elapsed = (time.monotonic() - t0) * 1000
+            return {
+                "label": proxy.display,
+                "alive": True,
+                "elapsed_ms": elapsed,
+                "response_ip": response_ip,
+                "country": geo.get("country", ""),
+                "country_code": geo.get("countryCode", ""),
+                "region": geo.get("regionName", ""),
+                "city": geo.get("city", ""),
+                "asn": geo.get("as", ""),
+                "isp": geo.get("isp", ""),
+                "org": geo.get("org", ""),
+                "timezone": geo.get("timezone", ""),
+                "info": f"OK via {endpoint_name}/{probe_protocol}",
+            }
+
+    error_text = "; ".join(errors[-3:]) if errors else "Probe failed"
     return {
         "label": proxy.display,
-        "alive": True,
-        "elapsed_ms": elapsed,
-        "response_ip": response_ip,
-        "country": geo.get("country", ""),
-        "country_code": geo.get("countryCode", ""),
-        "region": geo.get("regionName", ""),
-        "city": geo.get("city", ""),
-        "asn": geo.get("as", ""),
-        "isp": geo.get("isp", ""),
-        "org": geo.get("org", ""),
-        "timezone": geo.get("timezone", ""),
-        "info": geo.get("geo_error", "OK"),
+        "alive": False,
+        "elapsed_ms": (time.monotonic() - t0) * 1000,
+        "error": _short_error(error_text),
     }
 
 def _value_or_dash(value) -> str:
@@ -513,10 +597,10 @@ class CheckPortTab(QWidget):
         scan_row.setSpacing(8)
         self._scan_range_edit = QLineEdit("1-1024")
         self._scan_range_edit.setPlaceholderText("Port range: 1-1024,2000,3000-3010")
-        self._scan_range_edit.setFixedHeight(26)
+        self._scan_range_edit.setFixedHeight(COMPACT_CONTROL_HEIGHT)
         scan_row.addWidget(self._scan_range_edit, 1)
         self._scan_btn = QPushButton("🔎 Scan host ports")
-        self._scan_btn.setFixedHeight(26)
+        self._scan_btn.setFixedHeight(COMPACT_CONTROL_HEIGHT)
         self._scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._scan_btn.setStyleSheet(_small_btn_style(accent=True))
         self._scan_btn.clicked.connect(self._run_host_scan)
@@ -527,14 +611,14 @@ class CheckPortTab(QWidget):
         action_row.setSpacing(8)
         action_row.addStretch()
         self._port_clear_btn = QPushButton("✕ Clear")
-        self._port_clear_btn.setFixedHeight(26)
+        self._port_clear_btn.setFixedHeight(COMPACT_CONTROL_HEIGHT)
         self._port_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._port_clear_btn.setStyleSheet(_small_btn_style())
         self._port_clear_btn.clicked.connect(self._clear_port_results)
         action_row.addWidget(self._port_clear_btn)
 
         self._port_btn = QPushButton("⚡ Check all")
-        self._port_btn.setFixedHeight(26)
+        self._port_btn.setFixedHeight(COMPACT_CONTROL_HEIGHT)
         self._port_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._port_btn.setStyleSheet(_small_btn_style(accent=True))
         self._port_btn.clicked.connect(self._run_port_check)
@@ -691,9 +775,9 @@ class PingTab(QWidget):
 
         fmt_hint = QLabel(
             "<code>host:port</code>  ·  "
+            "<code>host:port:user:pass</code>  ·  "
             "<code>user:pass@host:port</code>  ·  "
-            "<code>socks5://host:port</code>  ·  "
-            "<code>socks5://user:pass@host:port</code>  ·  "
+            "<code>socks5h://user:pass@host:port</code>  ·  "
             "<code>http://user:pass@host:port</code>"
         )
         fmt_hint.setWordWrap(True)
@@ -702,7 +786,7 @@ class PingTab(QWidget):
         self._proxy_input = LinkedPlainTextEdit()
         self._proxy_input.setObjectName("toolTextArea")
         self._proxy_input.setPlaceholderText(
-            "host:port\nuser:pass@host:port\nsocks5://user:pass@host:port"
+            "host:port\nhost:port:user:pass\nsocks5h://user:pass@host:port"
         )
         self._proxy_input.setMinimumHeight(250)
         self._proxy_input.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
@@ -726,8 +810,8 @@ class PingTab(QWidget):
         action_row.setSpacing(8)
         self._proto_combo = QComboBox()
         self._proto_combo.addItems(["HTTP", "HTTPS", "SOCKS5", "SOCKS4"])
-        self._proto_combo.setFixedHeight(26)
-        self._proto_combo.setFixedWidth(92)
+        self._proto_combo.setFixedHeight(COMPACT_CONTROL_HEIGHT)
+        self._proto_combo.setFixedWidth(104)
         self._proto_combo.setToolTip(
             "Default protocol — only applies when the proxy string has no scheme"
         )
@@ -735,28 +819,28 @@ class PingTab(QWidget):
         action_row.addStretch()
 
         self._proxy_paste_btn = QPushButton("📋 Paste")
-        self._proxy_paste_btn.setFixedHeight(26)
+        self._proxy_paste_btn.setFixedHeight(COMPACT_CONTROL_HEIGHT)
         self._proxy_paste_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._proxy_paste_btn.setStyleSheet(_small_btn_style())
         self._proxy_paste_btn.clicked.connect(self._paste_proxy_clipboard)
         action_row.addWidget(self._proxy_paste_btn)
 
         self._proxy_import_btn = QPushButton("📄 Import .txt")
-        self._proxy_import_btn.setFixedHeight(26)
+        self._proxy_import_btn.setFixedHeight(COMPACT_CONTROL_HEIGHT)
         self._proxy_import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._proxy_import_btn.setStyleSheet(_small_btn_style())
         self._proxy_import_btn.clicked.connect(self._import_proxy_file)
         action_row.addWidget(self._proxy_import_btn)
 
         self._proxy_clear_btn = QPushButton("✕ Clear")
-        self._proxy_clear_btn.setFixedHeight(26)
+        self._proxy_clear_btn.setFixedHeight(COMPACT_CONTROL_HEIGHT)
         self._proxy_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._proxy_clear_btn.setStyleSheet(_small_btn_style())
         self._proxy_clear_btn.clicked.connect(self._clear_proxy_results)
         action_row.addWidget(self._proxy_clear_btn)
 
         self._proxy_btn = QPushButton("📡 Ping all")
-        self._proxy_btn.setFixedHeight(26)
+        self._proxy_btn.setFixedHeight(COMPACT_CONTROL_HEIGHT)
         self._proxy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._proxy_btn.setStyleSheet(_small_btn_style(accent=True))
         self._proxy_btn.clicked.connect(self._run_proxy_ping)
@@ -775,13 +859,15 @@ class PingTab(QWidget):
 
         self._proxy_filter_combo = QComboBox()
         self._proxy_filter_combo.addItems(["All", "Alive", "Dead"])
-        self._proxy_filter_combo.setFixedHeight(26)
+        self._proxy_filter_combo.setFixedHeight(COMPACT_CONTROL_HEIGHT)
+        self._proxy_filter_combo.setMinimumWidth(108)
         self._proxy_filter_combo.currentTextChanged.connect(lambda _text: self._refresh_proxy_results_view())
         stats_row.addWidget(self._proxy_filter_combo)
 
         self._proxy_sort_combo = QComboBox()
         self._proxy_sort_combo.addItems(["Input order", "Speed ↑", "Speed ↓", "Status", "Location"])
-        self._proxy_sort_combo.setFixedHeight(26)
+        self._proxy_sort_combo.setFixedHeight(COMPACT_CONTROL_HEIGHT)
+        self._proxy_sort_combo.setMinimumWidth(154)
         self._proxy_sort_combo.currentTextChanged.connect(lambda _text: self._refresh_proxy_results_view())
         stats_row.addWidget(self._proxy_sort_combo)
         layout.addLayout(stats_row)
@@ -922,7 +1008,7 @@ class PingTab(QWidget):
         )
 
     def _on_proxy_input_hover(self, input_line: int):
-        self._proxy_input.set_highlight_line(input_line)
+        self._proxy_input.set_highlight_line(-1)
         result_line = -1
         input_index = input_line + 1
         if input_index in self._proxy_visible_indexes:
@@ -930,7 +1016,7 @@ class PingTab(QWidget):
         self._proxy_result.set_highlight_line(result_line)
 
     def _on_proxy_result_hover(self, result_line: int):
-        self._proxy_result.set_highlight_line(result_line)
+        self._proxy_result.set_highlight_line(-1)
         input_line = -1
         if 0 <= result_line < len(self._proxy_visible_indexes):
             input_line = self._proxy_visible_indexes[result_line] - 1
@@ -956,7 +1042,7 @@ class PingModal(QDialog):
                 close_handler=self.close,
                 outer_margins=(0, 8, 0, 0),
             ),
-            "Ping",
+            "Proxy",
         )
         tabs.addTab(
             CheckPortTab(
@@ -965,7 +1051,7 @@ class PingModal(QDialog):
                 close_handler=self.close,
                 outer_margins=(0, 8, 0, 0),
             ),
-            "Check port",
+            "Host",
         )
         layout.addWidget(tabs)
 

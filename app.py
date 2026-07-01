@@ -1540,7 +1540,7 @@ class ProxyApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Proxer - Auto rotate proxies from CliProxy")
-        self.setFixedSize(800, 744)
+        # self.setFixedSize(800, 744)
         self._status_sig.connect(self._apply_status)
         self._auto_check_enabled = False
         self._auto_check_interval = 60
@@ -1875,9 +1875,9 @@ class ProxyApp(QMainWindow):
 
         # Blur overlay stays inside the CliProxy tab so the Ping tab remains usable.
         self._ping_tab = PingTab()
-        self._tabs.addTab(self._ping_tab, make_tab_icon("ping"), "Ping")
+        self._tabs.addTab(self._ping_tab, make_tab_icon("ping"), "Proxy")
         self._check_port_tab = CheckPortTab()
-        self._tabs.addTab(self._check_port_tab, make_tab_icon("check_port"), "Check port")
+        self._tabs.addTab(self._check_port_tab, make_tab_icon("check_port"), "Host")
 
         self._blur_overlay = BlurOverlay(self._cliproxy_tab)
         self._cliproxy_btn = self._blur_overlay.btn

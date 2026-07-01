@@ -47,7 +47,7 @@ QLineEdit {{
     color: {PALETTE['text']};
     border: 1px solid {PALETTE['border']};
     border-radius: 7px;
-    padding: 8px 12px;
+    padding: 4px 10px;
     font-size: 10pt;
     selection-background-color: {PALETTE['accent']};
 }}
@@ -65,8 +65,8 @@ QPlainTextEdit {{
     selection-background-color: {PALETTE['accent']};
 }}
 QPlainTextEdit:focus {{
-    border-color: {PALETTE['border_focus']};
-    background: #121827;
+    border-color: {PALETTE['border']};
+    background: {PALETTE['entry_bg']};
 }}
 QPlainTextEdit#toolOutput {{
     color: {PALETTE['label']};
@@ -78,13 +78,14 @@ QComboBox {{
     color: {PALETTE['text']};
     border: 1px solid {PALETTE['border']};
     border-radius: 7px;
-    padding: 8px 12px;
+    padding: 4px 8px;
+    padding-right: 24px;
     font-size: 10pt;
     selection-background-color: {PALETTE['accent']};
 }}
 QComboBox:focus {{
-    border-color: {PALETTE['border_focus']};
-    background: #121827;
+    border-color: {PALETTE['border']};
+    background: {PALETTE['entry_bg']};
 }}
 QComboBox::drop-down {{
     subcontrol-origin: padding;

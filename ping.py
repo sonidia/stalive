@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import re, socket, time
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal
+from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor, QTextFormat
 from PySide6.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel,
+    QApplication, QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QVBoxLayout, QWidget, QFrame, QComboBox,
-    QPlainTextEdit, QTabWidget,
+    QPlainTextEdit, QTabWidget, QTextEdit,
 )
 
 from shared import PALETTE
@@ -83,6 +85,59 @@ def parse_proxy(raw: str, default_protocol: str = "http") -> ParsedProxy | None:
 
 def _split_batch_text(text: str) -> list[str]:
     return [part.strip() for part in re.split(r"[\n,;]+", text) if part.strip()]
+
+def _parse_port_range(raw: str) -> list[int]:
+    ports: set[int] = set()
+    for part in re.split(r"[,;\s]+", raw):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start_str, end_str = part.split("-", 1)
+            start, end = int(start_str), int(end_str)
+            if start > end:
+                start, end = end, start
+            ports.update(range(max(1, start), min(65535, end) + 1))
+        else:
+            port = int(part)
+            if 1 <= port <= 65535:
+                ports.add(port)
+    return sorted(ports)
+
+class LinkedPlainTextEdit(QPlainTextEdit):
+    line_hovered = Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMouseTracking(True)
+        self._highlight_line = -1
+
+    def mouseMoveEvent(self, event):
+        cursor = self.cursorForPosition(event.position().toPoint())
+        line = cursor.blockNumber()
+        if line != self._highlight_line:
+            self.line_hovered.emit(line)
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        self.line_hovered.emit(-1)
+        super().leaveEvent(event)
+
+    def set_highlight_line(self, line: int):
+        self._highlight_line = line
+        selections = []
+        if line >= 0:
+            block = self.document().findBlockByNumber(line)
+            if block.isValid():
+                selection = QTextEdit.ExtraSelection()
+                selection.cursor = QTextCursor(block)
+                selection.cursor.clearSelection()
+                fmt = QTextCharFormat()
+                fmt.setBackground(QColor("#1f2a44"))
+                fmt.setProperty(QTextFormat.Property.FullWidthSelection, True)
+                selection.format = fmt
+                selections.append(selection)
+        self.setExtraSelections(selections)
 
 def _parse_port_target(raw: str) -> tuple[str, str, int, str | None]:
     if ":" in raw:
@@ -217,8 +272,11 @@ def _proxy_location(result: dict) -> str:
 def _format_proxy_result_line(result: dict) -> str:
     index = int(result.get("index", 0) or 0)
     prefix = f"{index:02d}" if index else "--"
-    alive = bool(result.get("alive"))
-    status = "✅ alive" if alive else "❌ dead"
+    alive = result.get("alive")
+    if alive is None:
+        status = "⏳ pending"
+    else:
+        status = "✅ alive" if alive else "❌ dead"
     elapsed = result.get("elapsed_ms", 0.0) or 0.0
     speed = f"{elapsed:.0f} ms" if elapsed > 0 else "-"
     label = _value_or_dash(result.get("label"))
@@ -233,26 +291,70 @@ def _format_proxy_result_line(result: dict) -> str:
         f"ASN {asn} | ISP {isp} | timezone {timezone} | info {info}"
     )
 
+def _format_port_result_line(result: dict) -> str:
+    index = int(result.get("index", 0) or 0)
+    prefix = f"{index:02d}" if index else "--"
+    target = _value_or_dash(result.get("target"))
+    elapsed = result.get("elapsed_ms", 0.0) or 0.0
+    speed = f"{elapsed:.0f} ms" if elapsed > 0 else "-"
+    if result.get("alive"):
+        peer = _value_or_dash(result.get("peer_ip"))
+        return f"{prefix} ✅ open | speed {speed} | {target} | peer {peer}"
+    return f"{prefix} ❌ closed | speed {speed} | {target} | info {_value_or_dash(result.get('error'))}"
+
 class PortBatchWorker(QObject):
-    item_result = Signal(str, bool, float, str, str)  # target, ok, ms, error, peer_ip
+    item_result = Signal(dict)
     progress = Signal(int, int)
     finished = Signal()
 
-    def __init__(self, targets: list[str], timeout: float = 5.0):
+    def __init__(
+        self,
+        targets: list[str],
+        timeout: float = 5.0,
+        max_workers: int = 64,
+        emit_closed: bool = True,
+    ):
         super().__init__()
         self._targets = targets
         self._timeout = timeout
+        self._max_workers = max(1, max_workers)
+        self._emit_closed = emit_closed
+
+    def _check_one(self, idx: int, raw: str) -> dict:
+        label, host, port, error = _parse_port_target(raw)
+        if error:
+            return {
+                "index": idx,
+                "target": label,
+                "alive": False,
+                "elapsed_ms": 0.0,
+                "error": error,
+                "peer_ip": "",
+            }
+        ok, elapsed, err, peer_ip = _check_tcp(host, port, self._timeout)
+        return {
+            "index": idx,
+            "target": label,
+            "alive": ok,
+            "elapsed_ms": elapsed,
+            "error": err,
+            "peer_ip": peer_ip,
+        }
 
     def run(self):
         total = len(self._targets)
-        for idx, raw in enumerate(self._targets, start=1):
-            label, host, port, error = _parse_port_target(raw)
-            if error:
-                self.item_result.emit(label, False, 0.0, error, "")
-            else:
-                ok, elapsed, err, peer_ip = _check_tcp(host, port, self._timeout)
-                self.item_result.emit(label, ok, elapsed, err, peer_ip)
-            self.progress.emit(idx, total)
+        done = 0
+        with ThreadPoolExecutor(max_workers=min(self._max_workers, max(1, total))) as executor:
+            futures = [
+                executor.submit(self._check_one, idx, raw)
+                for idx, raw in enumerate(self._targets, start=1)
+            ]
+            for future in as_completed(futures):
+                result = future.result()
+                done += 1
+                if self._emit_closed or result.get("alive"):
+                    self.item_result.emit(result)
+                self.progress.emit(done, total)
         self.finished.emit()
 
 class ProxyPingBatchWorker(QObject):
@@ -260,28 +362,38 @@ class ProxyPingBatchWorker(QObject):
     progress = Signal(int, int)
     finished = Signal()
 
-    def __init__(self, entries: list[str], default_protocol: str):
+    def __init__(self, entries: list[str], default_protocol: str, max_workers: int = 16):
         super().__init__()
         self._entries = entries
         self._default_protocol = default_protocol
+        self._max_workers = max(1, max_workers)
+
+    def _probe_one(self, idx: int, raw: str) -> dict:
+        proxy = parse_proxy(raw, default_protocol=self._default_protocol)
+        if proxy is None:
+            return {
+                "index": idx,
+                "label": raw,
+                "alive": False,
+                "elapsed_ms": 0.0,
+                "error": "Invalid proxy format",
+            }
+        result = _probe_proxy(proxy)
+        result["index"] = idx
+        return result
 
     def run(self):
         total = len(self._entries)
-        for idx, raw in enumerate(self._entries, start=1):
-            proxy = parse_proxy(raw, default_protocol=self._default_protocol)
-            if proxy is None:
-                self.item_result.emit({
-                    "index": idx,
-                    "label": raw,
-                    "alive": False,
-                    "elapsed_ms": 0.0,
-                    "error": "Invalid proxy format",
-                })
-            else:
-                result = _probe_proxy(proxy)
-                result["index"] = idx
-                self.item_result.emit(result)
-            self.progress.emit(idx, total)
+        done = 0
+        with ThreadPoolExecutor(max_workers=min(self._max_workers, max(1, total))) as executor:
+            futures = [
+                executor.submit(self._probe_one, idx, raw)
+                for idx, raw in enumerate(self._entries, start=1)
+            ]
+            for future in as_completed(futures):
+                done += 1
+                self.item_result.emit(future.result())
+                self.progress.emit(done, total)
         self.finished.emit()
 
 def _small_btn_style(accent: bool = False, danger: bool = False) -> str:
@@ -327,12 +439,12 @@ def _build_tool_shell(
     outer.setContentsMargins(*outer_margins)
     outer.setSpacing(9)
 
-    hdr = QHBoxLayout()
-    title = QLabel(title_text)
-    title.setObjectName("toolTitle")
-    hdr.addWidget(title)
-    hdr.addStretch()
     if show_close_button:
+        hdr = QHBoxLayout()
+        title = QLabel(title_text)
+        title.setObjectName("toolTitle")
+        hdr.addWidget(title)
+        hdr.addStretch()
         close_btn = QPushButton("✕")
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.setFixedSize(24, 24)
@@ -343,8 +455,8 @@ def _build_tool_shell(
         )
         close_btn.clicked.connect(close_handler or widget.close)
         hdr.addWidget(close_btn)
-    outer.addLayout(hdr)
-    outer.addWidget(_separator())
+        outer.addLayout(hdr)
+        outer.addWidget(_separator())
     return outer, outer
 
 def _section(text: str) -> QLabel:
@@ -367,6 +479,8 @@ class CheckPortTab(QWidget):
 
         self._port_thread: QThread | None = None
         self._port_worker: PortBatchWorker | None = None
+        self._port_mode = "check"
+        self._scan_found_count = 0
 
         self._build_ui()
 
@@ -394,6 +508,20 @@ class CheckPortTab(QWidget):
         self._port_input.setMinimumHeight(92)
         self._port_input.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         layout.addWidget(self._port_input)
+
+        scan_row = QHBoxLayout()
+        scan_row.setSpacing(8)
+        self._scan_range_edit = QLineEdit("1-1024")
+        self._scan_range_edit.setPlaceholderText("Port range: 1-1024,2000,3000-3010")
+        self._scan_range_edit.setFixedHeight(26)
+        scan_row.addWidget(self._scan_range_edit, 1)
+        self._scan_btn = QPushButton("🔎 Scan host ports")
+        self._scan_btn.setFixedHeight(26)
+        self._scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._scan_btn.setStyleSheet(_small_btn_style(accent=True))
+        self._scan_btn.clicked.connect(self._run_host_scan)
+        scan_row.addWidget(self._scan_btn)
+        layout.addLayout(scan_row)
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
@@ -439,12 +567,15 @@ class CheckPortTab(QWidget):
             return
 
         self._port_result.clear()
+        self._port_mode = "check"
+        self._scan_found_count = 0
         self._port_btn.setEnabled(False)
+        self._scan_btn.setEnabled(False)
         self._port_clear_btn.setEnabled(False)
         self._port_summary.setText(f"Checking 0/{len(targets)} targets...")
 
         self._port_thread = QThread()
-        self._port_worker = PortBatchWorker(targets)
+        self._port_worker = PortBatchWorker(targets, timeout=5.0, max_workers=64)
         self._port_worker.moveToThread(self._port_thread)
         self._port_thread.started.connect(self._port_worker.run)
         self._port_worker.item_result.connect(self._on_port_item_result)
@@ -455,24 +586,69 @@ class CheckPortTab(QWidget):
         self._port_thread.finished.connect(self._port_thread.deleteLater)
         self._port_thread.start()
 
-    def _on_port_item_result(self, target: str, connected: bool, elapsed_ms: float,
-                             error: str, resolved_ip: str):
-        if connected:
-            ip_part = f"IP: {resolved_ip}" if resolved_ip else ""
-            self._port_result.appendPlainText(
-                f"✅ {target} · connected · {ip_part} ({elapsed_ms:.0f} ms)"
-            )
-        else:
-            detail = f"  ({error})" if error else ""
-            self._port_result.appendPlainText(f"❌ {target} · cannot connect{detail}")
+    def _run_host_scan(self):
+        try:
+            ports = _parse_port_range(self._scan_range_edit.text() or "1-1024")
+        except ValueError:
+            self._port_result.setPlainText("⚠ Invalid port range.")
+            self._port_summary.setText("Invalid scan range")
+            return
+
+        if not ports:
+            self._port_result.setPlainText("⚠ No ports to scan.")
+            self._port_summary.setText("No ports")
+            return
+
+        host = current_ipv4() or "127.0.0.1"
+        targets = [f"{host}:{port}" for port in ports]
+        self._port_result.clear()
+        self._port_mode = "scan"
+        self._scan_found_count = 0
+        self._port_btn.setEnabled(False)
+        self._scan_btn.setEnabled(False)
+        self._port_clear_btn.setEnabled(False)
+        self._port_summary.setText(f"Scanning {host} · 0/{len(targets)} ports...")
+
+        self._port_thread = QThread()
+        self._port_worker = PortBatchWorker(
+            targets,
+            timeout=0.25,
+            max_workers=256,
+            emit_closed=False,
+        )
+        self._port_worker.moveToThread(self._port_thread)
+        self._port_thread.started.connect(self._port_worker.run)
+        self._port_worker.item_result.connect(self._on_port_item_result)
+        self._port_worker.progress.connect(self._on_port_progress)
+        self._port_worker.finished.connect(self._on_port_batch_finished)
+        self._port_worker.finished.connect(self._port_thread.quit)
+        self._port_worker.finished.connect(self._port_worker.deleteLater)
+        self._port_thread.finished.connect(self._port_thread.deleteLater)
+        self._port_thread.start()
+
+    def _on_port_item_result(self, result: dict):
+        if self._port_mode == "scan" and result.get("alive"):
+            self._scan_found_count += 1
+        self._port_result.appendPlainText(_format_port_result_line(result))
 
     def _on_port_progress(self, done: int, total: int):
-        self._port_summary.setText(f"Checking {done}/{total} targets...")
+        if self._port_mode == "scan":
+            self._port_summary.setText(
+                f"Scanning {done}/{total} ports · open {self._scan_found_count}"
+            )
+        else:
+            self._port_summary.setText(f"Checking {done}/{total} targets...")
 
     def _on_port_batch_finished(self):
         self._port_btn.setEnabled(True)
+        self._scan_btn.setEnabled(True)
         self._port_clear_btn.setEnabled(True)
-        self._port_summary.setText("Done")
+        if self._port_mode == "scan":
+            if self._scan_found_count == 0:
+                self._port_result.appendPlainText("No open ports found.")
+            self._port_summary.setText(f"Done · open {self._scan_found_count}")
+        else:
+            self._port_summary.setText("Done")
 
 class PingTab(QWidget):
     def __init__(
@@ -489,6 +665,9 @@ class PingTab(QWidget):
 
         self._proxy_thread: QThread | None = None
         self._proxy_worker: ProxyPingBatchWorker | None = None
+        self._proxy_entries: list[str] = []
+        self._proxy_results: dict[int, dict] = {}
+        self._proxy_visible_indexes: list[int] = []
 
         self._build_ui()
 
@@ -520,7 +699,7 @@ class PingTab(QWidget):
         fmt_hint.setWordWrap(True)
         fmt_hint.setObjectName("toolFormatHint")
         layout.addWidget(fmt_hint)
-        self._proxy_input = QPlainTextEdit()
+        self._proxy_input = LinkedPlainTextEdit()
         self._proxy_input.setObjectName("toolTextArea")
         self._proxy_input.setPlaceholderText(
             "host:port\nuser:pass@host:port\nsocks5://user:pass@host:port"
@@ -528,7 +707,7 @@ class PingTab(QWidget):
         self._proxy_input.setMinimumHeight(250)
         self._proxy_input.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
 
-        self._proxy_result = QPlainTextEdit()
+        self._proxy_result = LinkedPlainTextEdit()
         self._proxy_result.setObjectName("toolOutput")
         self._proxy_result.setReadOnly(True)
         self._proxy_result.setMinimumHeight(250)
@@ -540,6 +719,8 @@ class PingTab(QWidget):
         io_row.addWidget(self._proxy_input, 1)
         io_row.addWidget(self._proxy_result, 1)
         layout.addLayout(io_row, 1)
+        self._proxy_input.line_hovered.connect(self._on_proxy_input_hover)
+        self._proxy_result.line_hovered.connect(self._on_proxy_result_hover)
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
@@ -552,6 +733,20 @@ class PingTab(QWidget):
         )
         action_row.addWidget(self._proto_combo)
         action_row.addStretch()
+
+        self._proxy_paste_btn = QPushButton("📋 Paste")
+        self._proxy_paste_btn.setFixedHeight(26)
+        self._proxy_paste_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._proxy_paste_btn.setStyleSheet(_small_btn_style())
+        self._proxy_paste_btn.clicked.connect(self._paste_proxy_clipboard)
+        action_row.addWidget(self._proxy_paste_btn)
+
+        self._proxy_import_btn = QPushButton("📄 Import .txt")
+        self._proxy_import_btn.setFixedHeight(26)
+        self._proxy_import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._proxy_import_btn.setStyleSheet(_small_btn_style())
+        self._proxy_import_btn.clicked.connect(self._import_proxy_file)
+        action_row.addWidget(self._proxy_import_btn)
 
         self._proxy_clear_btn = QPushButton("✕ Clear")
         self._proxy_clear_btn.setFixedHeight(26)
@@ -571,12 +766,61 @@ class PingTab(QWidget):
         self._proxy_summary = QLabel("Ready")
         self._proxy_summary.setObjectName("toolHint")
         layout.addWidget(self._proxy_summary)
+
+        stats_row = QHBoxLayout()
+        stats_row.setSpacing(8)
+        self._proxy_stats_lbl = QLabel("Stats: total 0 · done 0 · alive 0 · dead 0")
+        self._proxy_stats_lbl.setObjectName("toolHint")
+        stats_row.addWidget(self._proxy_stats_lbl, 1)
+
+        self._proxy_filter_combo = QComboBox()
+        self._proxy_filter_combo.addItems(["All", "Alive", "Dead"])
+        self._proxy_filter_combo.setFixedHeight(26)
+        self._proxy_filter_combo.currentTextChanged.connect(lambda _text: self._refresh_proxy_results_view())
+        stats_row.addWidget(self._proxy_filter_combo)
+
+        self._proxy_sort_combo = QComboBox()
+        self._proxy_sort_combo.addItems(["Input order", "Speed ↑", "Speed ↓", "Status", "Location"])
+        self._proxy_sort_combo.setFixedHeight(26)
+        self._proxy_sort_combo.currentTextChanged.connect(lambda _text: self._refresh_proxy_results_view())
+        stats_row.addWidget(self._proxy_sort_combo)
+        layout.addLayout(stats_row)
         if not self._show_close_button:
             outer.addStretch(1)
 
+    def _paste_proxy_clipboard(self):
+        text = QApplication.clipboard().text().strip()
+        if not text:
+            return
+        if self._proxy_input.toPlainText().strip():
+            self._proxy_input.insertPlainText("\n" + text)
+        else:
+            self._proxy_input.setPlainText(text)
+
+    def _import_proxy_file(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import proxy list",
+            "",
+            "Text files (*.txt);;All files (*.*)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except UnicodeDecodeError:
+            with open(path, "r", encoding="utf-8-sig", errors="replace") as fh:
+                text = fh.read()
+        if text.strip():
+            self._proxy_input.setPlainText(text.strip())
+
     def _clear_proxy_results(self):
         self._proxy_result.clear()
+        self._proxy_results.clear()
+        self._proxy_visible_indexes.clear()
         self._proxy_summary.setText("Ready")
+        self._update_proxy_stats()
 
     def _run_proxy_ping(self):
         entries = _split_batch_text(self._proxy_input.toPlainText())
@@ -586,9 +830,22 @@ class PingTab(QWidget):
             return
 
         default_proto = self._proto_combo.currentText().lower()
-        self._proxy_result.clear()
+        self._proxy_entries = entries
+        self._proxy_results = {
+            idx: {
+                "index": idx,
+                "label": raw,
+                "alive": None,
+                "elapsed_ms": 0.0,
+                "info": "Waiting",
+            }
+            for idx, raw in enumerate(entries, start=1)
+        }
+        self._refresh_proxy_results_view()
         self._proxy_btn.setEnabled(False)
         self._proxy_clear_btn.setEnabled(False)
+        self._proxy_paste_btn.setEnabled(False)
+        self._proxy_import_btn.setEnabled(False)
         self._proxy_summary.setText(f"Pinging 0/{len(entries)} proxies...")
 
         self._proxy_thread = QThread()
@@ -604,7 +861,10 @@ class PingTab(QWidget):
         self._proxy_thread.start()
 
     def _on_proxy_item_result(self, result: dict):
-        self._proxy_result.appendPlainText(_format_proxy_result_line(result))
+        idx = int(result.get("index", 0) or 0)
+        if idx:
+            self._proxy_results[idx] = result
+        self._refresh_proxy_results_view()
 
     def _on_proxy_progress(self, done: int, total: int):
         self._proxy_summary.setText(f"Pinging {done}/{total} proxies...")
@@ -612,7 +872,69 @@ class PingTab(QWidget):
     def _on_proxy_batch_finished(self):
         self._proxy_btn.setEnabled(True)
         self._proxy_clear_btn.setEnabled(True)
+        self._proxy_paste_btn.setEnabled(True)
+        self._proxy_import_btn.setEnabled(True)
         self._proxy_summary.setText("Done")
+        self._refresh_proxy_results_view()
+
+    def _filtered_proxy_results(self) -> list[dict]:
+        results = list(self._proxy_results.values())
+        filter_mode = self._proxy_filter_combo.currentText()
+        if filter_mode == "Alive":
+            results = [item for item in results if item.get("alive") is True]
+        elif filter_mode == "Dead":
+            results = [item for item in results if item.get("alive") is False]
+
+        sort_mode = self._proxy_sort_combo.currentText()
+        if sort_mode == "Speed ↑":
+            results.sort(key=lambda item: item.get("elapsed_ms", 0.0) or 10**9)
+        elif sort_mode == "Speed ↓":
+            results.sort(key=lambda item: item.get("elapsed_ms", 0.0) or -1, reverse=True)
+        elif sort_mode == "Status":
+            results.sort(key=lambda item: (item.get("alive") is not True, item.get("index", 0)))
+        elif sort_mode == "Location":
+            results.sort(key=lambda item: (_proxy_location(item), item.get("index", 0)))
+        else:
+            results.sort(key=lambda item: item.get("index", 0))
+        return results
+
+    def _refresh_proxy_results_view(self):
+        results = self._filtered_proxy_results()
+        self._proxy_visible_indexes = [int(item.get("index", 0) or 0) for item in results]
+        self._proxy_result.setPlainText("\n".join(_format_proxy_result_line(item) for item in results))
+        self._update_proxy_stats()
+
+    def _update_proxy_stats(self):
+        total = len(self._proxy_results)
+        done = sum(1 for item in self._proxy_results.values() if item.get("alive") is not None)
+        alive = sum(1 for item in self._proxy_results.values() if item.get("alive") is True)
+        dead = sum(1 for item in self._proxy_results.values() if item.get("alive") is False)
+        speeds = [
+            item.get("elapsed_ms", 0.0)
+            for item in self._proxy_results.values()
+            if item.get("alive") is True and item.get("elapsed_ms", 0.0) > 0
+        ]
+        avg = sum(speeds) / len(speeds) if speeds else 0.0
+        avg_text = f" · avg {avg:.0f} ms" if avg else ""
+        visible = len(self._proxy_visible_indexes)
+        self._proxy_stats_lbl.setText(
+            f"Stats: total {total} · done {done} · alive {alive} · dead {dead} · visible {visible}{avg_text}"
+        )
+
+    def _on_proxy_input_hover(self, input_line: int):
+        self._proxy_input.set_highlight_line(input_line)
+        result_line = -1
+        input_index = input_line + 1
+        if input_index in self._proxy_visible_indexes:
+            result_line = self._proxy_visible_indexes.index(input_index)
+        self._proxy_result.set_highlight_line(result_line)
+
+    def _on_proxy_result_hover(self, result_line: int):
+        self._proxy_result.set_highlight_line(result_line)
+        input_line = -1
+        if 0 <= result_line < len(self._proxy_visible_indexes):
+            input_line = self._proxy_visible_indexes[result_line] - 1
+        self._proxy_input.set_highlight_line(input_line)
 
 class PingModal(QDialog):
     def __init__(self, parent=None):

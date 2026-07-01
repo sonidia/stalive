@@ -2,14 +2,14 @@ import sys, json, requests, time, os, csv, socket, uuid, threading
 
 from PySide6.QtCore    import Qt, Signal, QObject, QStringListModel, QThread, QRect, QPoint, QTimer
 from stats import stats_collector, StatsModal
-from ping import PingModal
+from ping import PingTab
 from PySide6.QtGui     import QColor, QFont, QIcon, QTextCursor, QPainter, QTextDocument, QAbstractTextDocumentLayout, QPainterPath, QBrush, QPixmap, QPolygon
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QLineEdit, QComboBox, QPushButton,
     QTextEdit, QFrame, QSizePolicy, QCompleter, QMessageBox,
     QScrollArea, QStyledItemDelegate, QStyleOptionViewItem, QStyle, QGraphicsBlurEffect,
-    QSlider, QFileDialog
+    QSlider, QFileDialog, QTabWidget
 )
 
 from shared import COUNTRY_DATA, PALETTE, STYLESHEET
@@ -1559,6 +1559,18 @@ class ProxyApp(QMainWindow):
         self._cliproxy_timer.setInterval(3000)
         self._cliproxy_timer.timeout.connect(self._check_cliproxy_silent)
         self._cliproxy_timer.start()
+
+        self._tabs = QTabWidget()
+        self._tabs.setObjectName("mainTabs")
+        main.addWidget(self._tabs, 1)
+
+        self._cliproxy_tab = QWidget()
+        self._cliproxy_tab.setObjectName("cliproxyTab")
+        self._tabs.addTab(self._cliproxy_tab, "CliProxy")
+
+        cliproxy_layout = QVBoxLayout(self._cliproxy_tab)
+        cliproxy_layout.setContentsMargins(0, 10, 0, 0)
+        cliproxy_layout.setSpacing(0)
         # NOTE: initial check is deferred to after blur overlay is created (end of _build_ui)
 
         # ── Content widget (everything below API bar) — will be blurred ──────
@@ -1800,21 +1812,6 @@ class ProxyApp(QMainWindow):
         self._stats_btn.clicked.connect(self._show_stats_modal)
         self._stats_modal: StatsModal | None = None
 
-        self._ping_btn = QPushButton("🏓 Ping")
-        self._ping_btn.setObjectName("pingBtn")
-        self._ping_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._ping_btn.setFixedHeight(26)
-        self._ping_btn.setFixedWidth(68)
-        self._ping_btn.setStyleSheet(
-            f"QPushButton {{ background: {PALETTE['entry_bg']}; color: {PALETTE['success']}; "
-            f"border: 1px solid {PALETTE['border']}; border-radius: 4px; "
-            f"padding: 0 8px; font-size: 8pt; }}"
-            f"QPushButton:hover {{ background: {PALETTE['panel']}; border-color: {PALETTE['success']}; color: #fff; }}"
-            f"QPushButton:pressed {{ background: {PALETTE['success']}; color: #fff; }}"
-        )
-        self._ping_btn.clicked.connect(self._show_ping_modal)
-        self._ping_modal: PingModal | None = None
-
         res_bar = QHBoxLayout()
         res_bar.setSpacing(6)
         self._res_count_lbl = QLabel("Total: 0 proxies")
@@ -1825,7 +1822,6 @@ class ProxyApp(QMainWindow):
         self._status_lbl.setStyleSheet(
             f"color: {PALETTE['subtext']}; font-size: 8pt; background: transparent;")
 
-        res_bar.addWidget(self._ping_btn)
         res_bar.addWidget(self._proxy_search)
         res_bar.addWidget(self._sort_btn)
         res_bar.addWidget(self._export_btn)
@@ -1851,17 +1847,20 @@ class ProxyApp(QMainWindow):
         self._scroll.setWidget(self._result_container)
         content_layout.addWidget(self._scroll, 1)
 
-        main.addWidget(self._content_widget, 1)
+        cliproxy_layout.addWidget(self._content_widget, 1)
 
         # ── Footer status bar ─────────────────────────────────────────────────
         footer = QHBoxLayout()
         footer.setContentsMargins(4, 0, 4, 0)
         footer.addWidget(self._status_lbl)
         footer.addStretch()
-        main.addLayout(footer)
+        cliproxy_layout.addLayout(footer)
 
-        # ── Blur overlay (sibling of content_widget inside root) ─────────────
-        self._blur_overlay = BlurOverlay(root)
+        # Blur overlay stays inside the CliProxy tab so the Ping tab remains usable.
+        self._ping_tab = PingTab()
+        self._tabs.addTab(self._ping_tab, "Ping")
+
+        self._blur_overlay = BlurOverlay(self._cliproxy_tab)
         self._cliproxy_btn = self._blur_overlay.btn
         self._blur_overlay.btn_clicked.connect(self._cliproxy_btn_clicked)
         self._blur_effect = QGraphicsBlurEffect()
@@ -2032,13 +2031,6 @@ class ProxyApp(QMainWindow):
         self._stats_modal.show()
         self._stats_modal.raise_()
         self._stats_modal.activateWindow()
-
-    def _show_ping_modal(self):
-        if self._ping_modal is None or not self._ping_modal.isVisible():
-            self._ping_modal = PingModal(parent=self)
-        self._ping_modal.show()
-        self._ping_modal.raise_()
-        self._ping_modal.activateWindow()
 
     def _get_visible_proxy_dicts(self) -> list:
         """Return proxy dicts for all currently visible proxy cards."""

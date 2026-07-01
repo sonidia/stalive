@@ -172,14 +172,18 @@ def _separator() -> QFrame:
     line.setStyleSheet(f"color: {PALETTE['border']}; margin: 4px 0;")
     return line
 
-class PingModal(QDialog):
-    def __init__(self, parent=None):
+class PingTab(QWidget):
+    def __init__(
+        self,
+        parent=None,
+        show_close_button: bool = False,
+        close_handler=None,
+        outer_margins: tuple[int, int, int, int] = (16, 14, 16, 16),
+    ):
         super().__init__(parent)
-        self.setWindowTitle("Ping & Port Check")
-        self.setModal(True)
-        self.setFixedWidth(480)
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._show_close_button = show_close_button
+        self._close_handler = close_handler
+        self._outer_margins = outer_margins
 
         self._port_thread:  QThread | None = None
         self._port_worker:  PortCheckWorker | None = None
@@ -188,18 +192,9 @@ class PingModal(QDialog):
 
         self._build_ui()
 
-    def showEvent(self, event):
-        super().showEvent(event)
-        from PySide6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen().availableGeometry()
-        self.move(
-            screen.center().x() - self.width()  // 2,
-            screen.center().y() - self.height() // 2,
-        )
-
     def _build_ui(self):
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(*self._outer_margins)
 
         card = QWidget()
         card.setObjectName("pingModalCard")
@@ -224,16 +219,17 @@ class PingModal(QDialog):
         )
         hdr.addWidget(title)
         hdr.addStretch()
-        close_btn = QPushButton("✕")
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setFixedSize(28, 28)
-        close_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {PALETTE['subtext']}; "
-            f"border: none; font-size: 11pt; border-radius: 6px; }}"
-            f"QPushButton:hover {{ background: {PALETTE['error']}; color: #fff; }}"
-        )
-        close_btn.clicked.connect(self.close)
-        hdr.addWidget(close_btn)
+        if self._show_close_button:
+            close_btn = QPushButton("✕")
+            close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            close_btn.setFixedSize(28, 28)
+            close_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {PALETTE['subtext']}; "
+                f"border: none; font-size: 11pt; border-radius: 6px; }}"
+                f"QPushButton:hover {{ background: {PALETTE['error']}; color: #fff; }}"
+            )
+            close_btn.clicked.connect(self._close_handler or self.close)
+            hdr.addWidget(close_btn)
         layout.addLayout(hdr)
 
         layout.addWidget(_separator())
@@ -325,6 +321,8 @@ class PingModal(QDialog):
         self._proxy_result.setMinimumHeight(20)
         self._proxy_result.setStyleSheet(f"color: {PALETTE['subtext']}; font-size: 9pt; background: transparent;")
         layout.addWidget(self._proxy_result)
+        if not self._show_close_button:
+            outer.addStretch(1)
 
     @staticmethod
     def _section(text: str) -> QLabel:
@@ -436,6 +434,35 @@ class PingModal(QDialog):
                 f"❌ Dead  —  {label}  no response{timing}{detail}"
             )
             self._proxy_result.setStyleSheet(_result_style(False))
+
+class PingModal(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Ping & Port Check")
+        self.setModal(True)
+        self.setFixedWidth(480)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(
+            PingTab(
+                parent=self,
+                show_close_button=True,
+                close_handler=self.close,
+                outer_margins=(0, 0, 0, 0),
+            )
+        )
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move(
+            screen.center().x() - self.width()  // 2,
+            screen.center().y() - self.height() // 2,
+        )
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

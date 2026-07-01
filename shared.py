@@ -104,6 +104,34 @@ QToolTip {{
     color: {PALETTE['text']};
     border: 1px solid {PALETTE['border']};
 }}
+QTabWidget#mainTabs::pane {{
+    background: transparent;
+    border: none;
+    top: -1px;
+}}
+QTabWidget#mainTabs QTabBar::tab {{
+    background: {PALETTE['card']};
+    color: {PALETTE['label']};
+    border: 1px solid {PALETTE['border']};
+    border-bottom: none;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    min-width: 104px;
+    padding: 8px 18px;
+    margin-right: 6px;
+    font-size: 9pt;
+    font-weight: 700;
+}}
+QTabWidget#mainTabs QTabBar::tab:selected {{
+    background: {PALETTE['accent']};
+    color: #fff;
+    border-color: {PALETTE['accent']};
+}}
+QTabWidget#mainTabs QTabBar::tab:hover:!selected {{
+    background: {PALETTE['panel']};
+    color: {PALETTE['text']};
+    border-color: {PALETTE['border_focus']};
+}}
 QPushButton#fetchBtn {{
     background: {PALETTE['accent']};
     color: #fff;

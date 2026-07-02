@@ -82,8 +82,17 @@ class SlidingTabWidget(QTabWidget):
         self.setTabBar(SlidingTabBar(self))
 
 STYLESHEET = f"""
-QMainWindow, QWidget#central {{
+QMainWindow {{
+    background: transparent;
+}}
+QWidget#central {{
     background: {PALETTE['bg']};
+    border: 1px solid {PALETTE['border']};
+    border-radius: 10px;
+}}
+QWidget#central[maximized="true"] {{
+    border-radius: 0;
+    border: none;
 }}
 QWidget#card {{
     background: {PALETTE['card']};
@@ -239,6 +248,77 @@ QToolTip {{
     background: {PALETTE['panel']};
     color: {PALETTE['text']};
     border: 1px solid {PALETTE['border']};
+}}
+QWidget#customTopBar {{
+    background: {PALETTE['panel']};
+    border: none;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    padding: 0;
+}}
+QWidget#central[maximized="true"] QWidget#customTopBar {{
+    border-radius: 0;
+}}
+QWidget#customTopBar[maximized="true"] {{
+    border-radius: 0;
+}}
+QLabel#topBarIcon {{
+    background: transparent;
+}}
+QLabel#topBarTitle {{
+    color: {PALETTE['text']};
+    font-size: 8.5pt;
+    font-weight: 800;
+    background: transparent;
+}}
+QWidget#topBarTabStrip {{
+    background: transparent;
+    border: none;
+}}
+QPushButton#topBarTabButton {{
+    background: transparent;
+    color: {PALETTE['label']};
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 0 9px;
+    font-size: 8pt;
+    font-weight: 700;
+}}
+QPushButton#topBarTabButton:hover:!checked {{
+    background: rgba(255, 255, 255, 0.04);
+    color: {PALETTE['text']};
+}}
+QPushButton#topBarTabButton:checked {{
+    background: {PALETTE['accent']};
+    color: #fff;
+    border-color: {PALETTE['accent']};
+}}
+QPushButton#topBarWindowButton,
+QPushButton#topBarCloseButton {{
+    background: transparent;
+    color: {PALETTE['text']};
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    font-size: 9pt;
+    font-weight: 800;
+}}
+QPushButton#topBarCloseButton {{
+    border-top-right-radius: 10px;
+}}
+QWidget#central[maximized="true"] QPushButton#topBarCloseButton,
+QPushButton#topBarCloseButton[maximized="true"] {{
+    border-top-right-radius: 0;
+}}
+QPushButton#topBarWindowButton:hover {{
+    background: {PALETTE['border']};
+    color: #fff;
+}}
+QPushButton#topBarCloseButton:hover {{
+    background: {PALETTE['error']};
+    color: #fff;
 }}
 QTabWidget#mainTabs::pane {{
     background: transparent;

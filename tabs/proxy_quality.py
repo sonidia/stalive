@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import csv
-import json
-import re
+import csv, json, re
 
-from PySide6.QtCore import QPoint, QRectF, QSize, Qt, QThread
-from PySide6.QtGui import QColor, QPainter, QPen
+from shiboken6 import isValid
+from PySide6.QtCore import QPoint, QRectF, QSize, Qt, QThread, QUrl
+from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -45,7 +45,6 @@ from .common import (
     make_section,
     make_tool_button,
 )
-
 
 class ProxyStatsChart(QWidget):
     def __init__(self, parent=None):
@@ -191,6 +190,11 @@ class ProxyTab(QWidget):
         self._proxy_visible_indexes: list[int] = []
         self._is_running = False
         self._refreshing_table = False
+        self._flag_pixmaps: dict[str, QPixmap] = {}
+        self._flag_labels: dict[str, list[QLabel]] = {}
+        self._flag_pending: set[str] = set()
+        self._flag_manager = QNetworkAccessManager(self)
+        self._flag_manager.finished.connect(self._on_flag_reply)
 
         self._build_ui()
         self._show_input_page()
@@ -205,14 +209,6 @@ class ProxyTab(QWidget):
             self._close_handler,
             self._outer_margins,
         )
-        layout.addWidget(make_section("Proxy quality check"))
-        layout.addWidget(
-            make_hint(
-                "Paste one proxy per line. Full score mode adds lightweight checks for "
-                "Google, Facebook, Instagram, and TikTok; scores are internal estimates."
-            )
-        )
-
         self._stack = QStackedWidget()
         self._input_page = self._build_input_page()
         self._result_page = self._build_result_page()
@@ -236,16 +232,7 @@ class ProxyTab(QWidget):
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.setSpacing(8)
 
-        fmt_hint = QLabel(
-            "<code>host:port</code> | "
-            "<code>host:port:user:pass</code> | "
-            "<code>user:pass@host:port</code> | "
-            "<code>socks5h://user:pass@host:port</code> | "
-            "<code>http://user:pass@host:port</code>"
-        )
-        fmt_hint.setWordWrap(True)
-        fmt_hint.setObjectName("toolFormatHint")
-        page_layout.addWidget(fmt_hint)
+        page_layout.addLayout(self._build_input_select_row())
 
         self._proxy_input = QPlainTextEdit()
         self._proxy_input.setObjectName("toolTextArea")
@@ -264,7 +251,7 @@ class ProxyTab(QWidget):
         page_layout.addLayout(self._build_input_action_row())
         return page
 
-    def _build_input_action_row(self) -> QHBoxLayout:
+    def _build_input_select_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setSpacing(8)
 
@@ -308,6 +295,12 @@ class ProxyTab(QWidget):
         self._refresh_checked_combo_labels(self._workers_combo)
         row.addWidget(self._workers_combo)
 
+        row.addStretch()
+        return row
+
+    def _build_input_action_row(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setSpacing(8)
         row.addStretch()
 
         self._proxy_paste_btn = make_tool_button(
@@ -778,7 +771,7 @@ class ProxyTab(QWidget):
         fields = proxy_table_fields(result)
         for col, (_label, key, _width, align) in enumerate(self.RESULT_COLUMNS):
             text = fields.get(key, "-")
-            item = QTableWidgetItem("" if key == "proxy" else text)
+            item = QTableWidgetItem("" if key in {"proxy", "location"} else text)
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             item.setTextAlignment(align)
             item.setData(Qt.ItemDataRole.UserRole, int(result.get("index", 0) or 0))
@@ -801,7 +794,77 @@ class ProxyTab(QWidget):
             self._proxy_table.setItem(row, col, item)
             if key == "proxy":
                 self._proxy_table.setCellWidget(row, col, self._make_proxy_cell(result, text))
+            elif key == "location":
+                self._proxy_table.setCellWidget(row, col, self._make_location_cell(result, text))
         self._proxy_table.setRowHeight(row, 30)
+
+    def _make_location_cell(self, result: dict, location_text: str) -> QWidget:
+        cell = QWidget()
+        cell.setObjectName("proxyCell")
+        layout = QHBoxLayout(cell)
+        layout.setContentsMargins(6, 0, 4, 0)
+        layout.setSpacing(6)
+
+        flag = QLabel()
+        flag.setFixedSize(22, 15)
+        flag.setScaledContents(True)
+        flag.setToolTip(self._flag_url(self._country_code(result)))
+        layout.addWidget(flag, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._queue_flag_icon(result, flag)
+
+        label = QLabel(location_text)
+        label.setObjectName("proxyCellText")
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(label, 1)
+        return cell
+
+    def _country_code(self, result: dict) -> str:
+        code = str(result.get("country_code") or "").strip().lower()
+        if len(code) == 2 and code.isalpha():
+            return code
+        country = str(result.get("country") or "").strip().lower()
+        return country if len(country) == 2 and country.isalpha() else ""
+
+    def _flag_url(self, country_code: str) -> str:
+        return f"https://flagcdn.com/w40/{country_code}.png" if country_code else ""
+
+    def _queue_flag_icon(self, result: dict, label: QLabel):
+        code = self._country_code(result)
+        if not code:
+            label.hide()
+            return
+        label.show()
+        if code in self._flag_pixmaps:
+            label.setPixmap(self._flag_pixmaps[code])
+            return
+        self._flag_labels.setdefault(code, []).append(label)
+        if code in self._flag_pending:
+            return
+        self._flag_pending.add(code)
+        request = QNetworkRequest(QUrl(self._flag_url(code)))
+        reply = self._flag_manager.get(request)
+        reply.setProperty("country_code", code)
+
+    def _on_flag_reply(self, reply: QNetworkReply):
+        code = str(reply.property("country_code") or "")
+        self._flag_pending.discard(code)
+        if code and reply.error() == QNetworkReply.NetworkError.NoError:
+            pixmap = QPixmap()
+            if pixmap.loadFromData(reply.readAll()):
+                self._flag_pixmaps[code] = pixmap.scaled(
+                    22,
+                    15,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                for label in self._flag_labels.pop(code, []):
+                    if isValid(label):
+                        label.setPixmap(self._flag_pixmaps[code])
+        else:
+            for label in self._flag_labels.pop(code, []):
+                if isValid(label):
+                    label.hide()
+        reply.deleteLater()
 
     def _make_proxy_cell(self, result: dict, proxy_text: str) -> QWidget:
         cell = QWidget()

@@ -23,7 +23,6 @@ from .common import (
     make_tool_button,
 )
 
-
 class ProxyTab(QWidget):
     def __init__(
         self,

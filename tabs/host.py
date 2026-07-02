@@ -147,7 +147,7 @@ class HostTab(QWidget):
             self._clear_scan_results,
             tooltip="Clear the shared result output.",
         )
-        column.addLayout(make_action_row(self._scan_clear_btn))
+        scan_row.insertWidget(1, self._scan_clear_btn)
         column.addStretch(1)
         return column
 

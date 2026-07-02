@@ -158,6 +158,27 @@ QTableWidget#proxyResultTable::item {{
     border: none;
     padding: 4px 6px;
 }}
+QWidget#proxyCell {{
+    background: transparent;
+}}
+QLabel#proxyCellText {{
+    color: {PALETTE['text']};
+    background: transparent;
+    border: none;
+    font-family: "Consolas", monospace;
+    font-size: 8pt;
+}}
+QPushButton#proxyCellCopyBtn {{
+    background: transparent;
+    color: {PALETTE['label']};
+    border: none;
+    border-radius: 4px;
+    padding: 0;
+}}
+QPushButton#proxyCellCopyBtn:hover {{
+    background: {PALETTE['border']};
+    color: #fff;
+}}
 QHeaderView::section {{
     background: #151c2b;
     color: {PALETTE['label']};

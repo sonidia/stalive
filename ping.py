@@ -6,18 +6,20 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PySide6.QtCore import QObject, Signal
 
+from proxy_scoring import enrich_proxy_result
 from utils import current_ipv4
 
 class ParsedProxy:
-    __slots__ = ("protocol", "host", "port", "username", "password")
+    __slots__ = ("protocol", "host", "port", "username", "password", "expected_ip")
 
     def __init__(self, protocol: str, host: str, port: int,
-                 username: str = "", password: str = ""):
+                 username: str = "", password: str = "", expected_ip: str = ""):
         self.protocol = protocol   # "http" | "https" | "socks4" | "socks5"
         self.host     = host
         self.port     = port
         self.username = username
         self.password = password
+        self.expected_ip = expected_ip
 
     @property
     def has_auth(self) -> bool:
@@ -64,12 +66,35 @@ PROXY_REQUEST_HEADERS = {
     "User-Agent": "stalive-proxy-check/1.0",
     "Cache-Control": "no-cache",
 }
+PROXY_PLATFORM_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
+}
+PROXY_PLATFORM_ENDPOINTS = {
+    "google": "https://www.google.com/generate_204",
+    "facebook": "https://www.facebook.com/login.php",
+    "instagram": "https://www.instagram.com/accounts/login/",
+    "tiktok": "https://www.tiktok.com/",
+}
 
 def parse_proxy(raw: str, default_protocol: str = "http") -> ParsedProxy | None:
     raw = raw.strip()
 
     if "://" not in raw and raw.count(":") >= 3:
-        host, port_str, username, password = raw.split(":", 3)
+        parts = raw.split(":")
+        host, port_str, username = parts[:3]
+        expected_ip = ""
+        password_parts = parts[3:]
+        if len(parts) >= 5 and _looks_like_ipv4(parts[-1]):
+            expected_ip = parts[-1].strip()
+            password_parts = parts[3:-1]
+        password = ":".join(password_parts)
         host = host.strip()
         username = username.strip()
         password = password.strip()
@@ -79,9 +104,16 @@ def parse_proxy(raw: str, default_protocol: str = "http") -> ParsedProxy | None:
                 return None
         except ValueError:
             return None
-        if not host or not username:
+        if not host or not username or not password:
             return None
-        return ParsedProxy(default_protocol.lower(), host, port, username, password)
+        return ParsedProxy(
+            default_protocol.lower(),
+            host,
+            port,
+            username,
+            password,
+            expected_ip=expected_ip,
+        )
 
     m = _PROXY_RE.match(raw)
     if not m:
@@ -103,6 +135,15 @@ def parse_proxy(raw: str, default_protocol: str = "http") -> ParsedProxy | None:
         username=m.group("user") or "",
         password=m.group("pwd")  or "",
     )
+
+def _looks_like_ipv4(value: str) -> bool:
+    parts = str(value or "").strip().split(".")
+    if len(parts) != 4:
+        return False
+    try:
+        return all(part.isdigit() and 0 <= int(part) <= 255 for part in parts)
+    except ValueError:
+        return False
 
 def _split_batch_text(text: str) -> list[str]:
     return [part.strip() for part in re.split(r"[\n,;]+", text) if part.strip()]
@@ -194,6 +235,85 @@ def _short_error(exc: Exception | str) -> str:
         return text[:177].rstrip() + "..."
     return text
 
+def _platform_verdict(status_code: int, snippet: str) -> str:
+    text = (snippet or "").lower()
+    if status_code == 429 or "rate limit" in text or "too many requests" in text:
+        return "limited"
+    if status_code in (403, 451) or "access denied" in text or "forbidden" in text:
+        return "blocked"
+    if any(
+        token in text
+        for token in (
+            "captcha",
+            "checkpoint",
+            "challenge",
+            "verify you are human",
+            "unusual traffic",
+            "suspicious traffic",
+            "please wait",
+            "slider",
+        )
+    ):
+        return "challenge"
+    if 200 <= status_code < 300:
+        return "ok"
+    if 300 <= status_code < 400:
+        return "redirect"
+    return "unknown"
+
+def _read_response_snippet(resp: requests.Response, limit: int = 4096) -> str:
+    content = b""
+    try:
+        for chunk in resp.iter_content(chunk_size=limit):
+            if chunk:
+                content += chunk[: max(0, limit - len(content))]
+            if len(content) >= limit:
+                break
+    except Exception:
+        return ""
+    return content.decode(resp.encoding or "utf-8", errors="ignore")
+
+def _probe_platform(name: str, url: str, proxies: dict) -> tuple[str, dict]:
+    t0 = time.monotonic()
+    try:
+        resp = requests.get(
+            url,
+            proxies=proxies,
+            timeout=(4.0, 7.0),
+            headers=PROXY_PLATFORM_HEADERS,
+            allow_redirects=False,
+            stream=True,
+        )
+        try:
+            snippet = _read_response_snippet(resp)
+            status_code = int(resp.status_code)
+            return name, {
+                "status_code": status_code,
+                "elapsed_ms": (time.monotonic() - t0) * 1000,
+                "verdict": _platform_verdict(status_code, snippet),
+            }
+        finally:
+            resp.close()
+    except Exception as exc:
+        return name, {
+            "status_code": 0,
+            "elapsed_ms": (time.monotonic() - t0) * 1000,
+            "verdict": "error",
+            "error": _short_error(exc),
+        }
+
+def _probe_platforms(proxies: dict) -> dict:
+    checks = {}
+    with ThreadPoolExecutor(max_workers=len(PROXY_PLATFORM_ENDPOINTS)) as executor:
+        futures = [
+            executor.submit(_probe_platform, name, url, proxies)
+            for name, url in PROXY_PLATFORM_ENDPOINTS.items()
+        ]
+        for future in as_completed(futures):
+            name, result = future.result()
+            checks[name] = result
+    return checks
+
 def _lookup_ip_geo(ip: str) -> dict:
     if not ip:
         return {}
@@ -208,7 +328,7 @@ def _lookup_ip_geo(ip: str) -> dict:
     except Exception as exc:
         return {"geo_error": str(exc)}
 
-def _probe_proxy(proxy: ParsedProxy) -> dict:
+def _probe_proxy(proxy: ParsedProxy, include_platform_tests: bool = False) -> dict:
     t0 = time.monotonic()
     errors = []
 
@@ -242,8 +362,9 @@ def _probe_proxy(proxy: ParsedProxy) -> dict:
                 geo = _lookup_ip_geo(response_ip)
 
             elapsed = (time.monotonic() - t0) * 1000
-            return {
+            result = {
                 "label": proxy.display,
+                "expected_ip": proxy.expected_ip,
                 "alive": True,
                 "elapsed_ms": elapsed,
                 "response_ip": response_ip,
@@ -257,14 +378,18 @@ def _probe_proxy(proxy: ParsedProxy) -> dict:
                 "timezone": geo.get("timezone", ""),
                 "info": f"OK via {endpoint_name}/{probe_protocol}",
             }
+            if include_platform_tests:
+                result["platform_checks"] = _probe_platforms(proxies)
+            return enrich_proxy_result(result)
 
     error_text = "; ".join(errors[-3:]) if errors else "Probe failed"
-    return {
+    return enrich_proxy_result({
         "label": proxy.display,
+        "expected_ip": proxy.expected_ip,
         "alive": False,
         "elapsed_ms": (time.monotonic() - t0) * 1000,
         "error": _short_error(error_text),
-    }
+    })
 
 def _value_or_dash(value) -> str:
     text = str(value or "").strip()
@@ -377,39 +502,65 @@ class ProxyPingBatchWorker(QObject):
     progress = Signal(int, int)
     finished = Signal()
 
-    def __init__(self, entries: list[str], default_protocol: str, max_workers: int = 16):
+    def __init__(
+        self,
+        entries: list[str],
+        default_protocol: str,
+        max_workers: int = 16,
+        include_platform_tests: bool = False,
+    ):
         super().__init__()
         self._entries = entries
         self._default_protocol = default_protocol
         self._max_workers = max(1, max_workers)
+        self._include_platform_tests = include_platform_tests
 
     def _probe_one(self, idx: int, raw: str) -> dict:
         proxy = parse_proxy(raw, default_protocol=self._default_protocol)
         if proxy is None:
-            return {
+            return enrich_proxy_result({
                 "index": idx,
                 "label": raw,
+                "source": raw,
                 "alive": False,
                 "elapsed_ms": 0.0,
                 "error": "Invalid proxy format",
-            }
-        result = _probe_proxy(proxy)
+            })
+        result = _probe_proxy(
+            proxy,
+            include_platform_tests=self._include_platform_tests,
+        )
         result["index"] = idx
+        result["source"] = raw
         return result
 
     def run(self):
         total = len(self._entries)
         done = 0
-        with ThreadPoolExecutor(max_workers=min(self._max_workers, max(1, total))) as executor:
-            futures = [
-                executor.submit(self._probe_one, idx, raw)
-                for idx, raw in enumerate(self._entries, start=1)
-            ]
-            for future in as_completed(futures):
-                done += 1
-                self.item_result.emit(future.result())
-                self.progress.emit(done, total)
-        self.finished.emit()
+        try:
+            with ThreadPoolExecutor(max_workers=min(self._max_workers, max(1, total))) as executor:
+                futures = {
+                    executor.submit(self._probe_one, idx, raw): (idx, raw)
+                    for idx, raw in enumerate(self._entries, start=1)
+                }
+                for future in as_completed(futures):
+                    idx, raw = futures[future]
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        result = enrich_proxy_result({
+                            "index": idx,
+                            "label": raw,
+                            "source": raw,
+                            "alive": False,
+                            "elapsed_ms": 0.0,
+                            "error": f"Worker error: {_short_error(exc)}",
+                        })
+                    done += 1
+                    self.item_result.emit(result)
+                    self.progress.emit(done, total)
+        finally:
+            self.finished.emit()
 
 def __getattr__(name: str):
     if name == "PingTab":

@@ -138,6 +138,35 @@ QPlainTextEdit#toolOutput {{
     font-family: "Consolas", monospace;
     font-size: 8pt;
 }}
+QPlainTextEdit#proxyDetails {{
+    color: {PALETTE['label']};
+    font-family: "Consolas", monospace;
+    font-size: 8pt;
+}}
+QTableWidget#proxyResultTable {{
+    background: {PALETTE['entry_bg']};
+    alternate-background-color: #121827;
+    color: {PALETTE['text']};
+    border: 1px solid {PALETTE['border']};
+    border-radius: 8px;
+    selection-background-color: #1f2a44;
+    selection-color: #fff;
+    font-size: 8pt;
+    gridline-color: {PALETTE['border']};
+}}
+QTableWidget#proxyResultTable::item {{
+    border: none;
+    padding: 4px 6px;
+}}
+QHeaderView::section {{
+    background: #151c2b;
+    color: {PALETTE['label']};
+    border: none;
+    border-bottom: 1px solid {PALETTE['border']};
+    padding: 7px 6px;
+    font-size: 8pt;
+    font-weight: 700;
+}}
 QComboBox {{
     background: {PALETTE['entry_bg']};
     color: {PALETTE['text']};

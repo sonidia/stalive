@@ -359,3 +359,8 @@ class ProxyTab(QWidget):
             input_index = self._proxy_visible_indexes[result_line]
             input_line = self._proxy_entry_lines.get(input_index, input_index - 1)
         self._proxy_input.set_highlight_line(input_line)
+
+
+# Compatibility shim: keep imports from tabs.proxy working while the richer,
+# easier-to-maintain implementation lives in its own module.
+from .proxy_quality import ProxyTab as ProxyTab
